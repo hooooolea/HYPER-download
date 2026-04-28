@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>HyperGraphRAG &#x591a;&#x7a7a;&#x95f4;&#x77e5;&#x8bc6;&#x8d85;&#x56fe;&#x4f53;&#x7cfb; &mdash; &#x901a;&#x7528;&#x7248;</title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+            
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+        
+        </head>
+        <body class="vscode-body vscode-light">
+            <h1 id="hypergraphrag-多空间知识超图体系--通用版">HyperGraphRAG 多空间知识超图体系 — 通用版</h1>
+<blockquote>
+<p>本文档描述领域无关的多空间知识超图体系设计，可基于此衍生教育、医疗、法律、金融等具体领域实现。
+文档状态：设计阶段，代码尚未实现</p>
+</blockquote>
+<hr>
+<h2 id="一为什么需要这个架构">一、为什么需要这个架构</h2>
+<h3 id="11-传统-rag-的问题">1.1 传统 RAG 的问题</h3>
+<p>传统 RAG 把文档切成碎片存进向量库，检索时只能找到「最像的 N 个片段」。这有两个根本局限：</p>
+<p><strong>局限1：没有结构，只有相似度</strong></p>
+<p>只知道片段 A 和片段 B 长得很像，但不知道它们是什么关系（父子？因果？并列？）。查出来的东西散成一盘沙子。</p>
+<p><strong>局限2：无法逐层深入</strong></p>
+<p>查到一段文字后，想「放大看看这段在讲什么」「缩小看看这章的整体框架」——传统 RAG 没有这个能力。</p>
+<h3 id="12-我们的解法">1.2 我们的解法</h3>
+<p>把知识组织成一棵树 + 一张网：</p>
+<pre><code>树：层层包含（书 &gt; 章 &gt; 节 &gt; 段）
+网：概念之间的关系（依赖、关联）
+</code></pre>
+<p>超图结构同时承载了树（Contains）和网（Depends/Related），并且可以逐层展开。</p>
+<h3 id="13-三个核心能力">1.3 三个核心能力</h3>
+<pre><code>1. 分层索引
+   同一个知识体，可以从「领域」尺度查，也可以到「段落」尺度查
+
+2. 关系感知
+   查「光合作用」时，不只返回段落，还能返回：
+   - 它的前置知识（细胞器、叶绿体）
+   - 它的后续应用（碳中和、农业生产）
+
+3. 可解释的推理路径
+   答案不是黑箱生成的，是沿着 (g, r, g) 路径走出来的
+</code></pre>
+<hr>
+<h2 id="二整体架构">二、整体架构</h2>
+<h3 id="21-三层空间">2.1 三层空间</h3>
+<pre><code>L1 概念空间（最抽象）—— 是什么
+L2 片段空间（中间层）—— 怎么说的
+L3 目标空间（最具体，可选）—— 要达成什么
+</code></pre>
+<p>L1 + L2 是所有领域都有的。L3 是否需要，取决于具体领域。</p>
+<h3 id="22-各层之间的关系">2.2 各层之间的关系</h3>
+<pre><code>同一空间内部：节点之间有边（Depends、Related）
+
+跨空间：超边 (g_source, r, g_target)
+        r 是连接两个超节点的桥梁
+</code></pre>
+<hr>
+<h2 id="三l1-概念空间">三、L1 概念空间</h2>
+<h3 id="31-实体concept概念">3.1 实体：Concept（概念）</h3>
+<p>就是一个名字，代表一个知识点或概念实体。</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>类型</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>id</td>
+<td>string</td>
+<td>唯一标识，格式 c_<uuid></td>
+</tr>
+<tr>
+<td>name</td>
+<td>string</td>
+<td>概念名称</td>
+</tr>
+<tr>
+<td>domain</td>
+<td>string</td>
+<td>所属领域</td>
+</tr>
+</tbody>
+</table>
+<p><strong>多领域例子</strong>：</p>
+<pre><code># 教育领域
+id: c_001
+name: 牛顿第一定律
+domain: 物理.力学
+
+# 医疗领域
+id: c_m001
+name: 2型糖尿病
+domain: 内分泌科.代谢疾病
+
+# 法律领域
+id: c_l001
+name: 合同解除权
+domain: 民法.合同编.通则
+
+# 金融领域
+id: c_f001
+name: 市盈率
+domain: 估值分析.相对估值法
+</code></pre>
+<h3 id="32-l1-内部关系">3.2 L1 内部关系</h3>
+<p><strong>Depends（前置依赖）</strong>：</p>
+<pre><code>A ──Depends──▶ B
+
+含义：A 的理解以 B 为前置
+多领域例子：
+
+  教育：导数 ──Depends──▶ 函数
+  医疗：糖尿病诊断 ──Depends──▶ 血糖代谢基础
+  法律：合同解除 ──Depends──▶ 合同效力
+  金融：DCF估值 ──Depends──▶ 现金流折现
+</code></pre>
+<p><strong>Related（关联）</strong>：</p>
+<pre><code>A ⇄ Related ⇄ B
+
+含义：A 和 B 有关联但无依赖关系
+多领域例子：
+
+  教育：光合作用 ⇄ Related ⇄ 呼吸作用
+  医疗：高血压 ⇄ Related ⇄ 肾脏疾病
+  法律：物权编 ⇄ Related ⇄ 债权编
+  金融：市盈率 ⇄ Related ⇄ 市净率
+</code></pre>
+<hr>
+<h2 id="四l2-片段空间">四、L2 片段空间</h2>
+<h3 id="41-实体knowledgefragment片段">4.1 实体：KnowledgeFragment（片段）</h3>
+<p>从源文件中提取的一段正文，是检索的最小单元。</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>类型</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>id</td>
+<td>string</td>
+<td>唯一标识，格式 kf_<uuid></td>
+</tr>
+<tr>
+<td>c_id</td>
+<td>string</td>
+<td>属于哪个概念（指向 L1）</td>
+</tr>
+<tr>
+<td>ftype</td>
+<td>string</td>
+<td>源文件格式（pdf/txt/md/docx/html）</td>
+</tr>
+<tr>
+<td>content</td>
+<td>string</td>
+<td>片段正文内容</td>
+</tr>
+<tr>
+<td>corpus_id</td>
+<td>string</td>
+<td>归到哪个语料库</td>
+</tr>
+<tr>
+<td>chapter</td>
+<td>string</td>
+<td>章节路径，支持嵌套（如 1.2.3）</td>
+</tr>
+<tr>
+<td>source_file</td>
+<td>string</td>
+<td>来源文件的 ID</td>
+</tr>
+<tr>
+<td>domain</td>
+<td>string</td>
+<td>所属领域</td>
+</tr>
+</tbody>
+</table>
+<p><strong>多领域例子</strong>：</p>
+<pre><code># 医疗领域
+id: kf_m001
+c_id: c_m001           ← 指向「2型糖尿病」
+ftype: pdf
+content: &quot;2型糖尿病的特征是胰岛素抵抗和胰岛β细胞功能进行性衰退...&quot;
+corpus_id: endocrine_handbook
+chapter: &quot;3.2.1&quot;
+source_file: 内分泌学 Handbook 第3版
+domain: 内分泌科.代谢疾病
+
+# 法律领域
+id: kf_l001
+c_id: c_l001           ← 指向「合同解除权」
+ftype: docx
+content: &quot;当事人一方迟延履行债务或者有其他违约行为致使不能实现合同目的...&quot;
+corpus_id: civil_law_commentary
+chapter: &quot;5.3.2&quot;
+source_file: 民法典合同编注释
+domain: 民法.合同编.通则
+
+# 金融领域
+id: kf_f001
+c_id: c_f001           ← 指向「市盈率」
+ftype: pdf
+content: &quot;市盈率（P/E）= 每股股价 / 每股收益，反映投资者为每元利润支付的价格...&quot;
+corpus_id: valuation_guides
+chapter: &quot;2.1&quot;
+source_file: 估值方法论
+domain: 估值分析.相对估值法
+</code></pre>
+<h3 id="42-l1-和-l2-的关系contains">4.2 L1 和 L2 的关系：Contains</h3>
+<pre><code>Concept ──Contains──▶ KnowledgeFragment
+
+一个概念可以包含多个片段
+一个片段也可以属于多个概念（一对多 + 多对多）
+</code></pre>
+<p>这是跨空间的超边，存储为普通边，不独立存储为实体。</p>
+<hr>
+<h2 id="五超节点与超边">五、超节点与超边</h2>
+<p>这是整个设计最核心的概念。</p>
+<h3 id="51-基本定义">5.1 基本定义</h3>
+<p><strong>超节点（Hypernode）</strong>：
+一个子图（里面有节点和边），对上层来说它是一个整体，对下层来说它可以展开。</p>
+<p><strong>超边（Hyperedge）</strong>：
+连接两个超节点的关系，记作 r。</p>
+<p><strong>基本结构</strong>：</p>
+<pre><code>(g_source, r, g_target)
+
+g_source：超节点，边的起点
+r        ：超边，关系类型
+g_target：超节点，边的终点
+</code></pre>
+<h3 id="52-展开超边如何变成普通边">5.2 展开：超边如何变成普通边</h3>
+<p>超边是抽象描述，展开后才变成 HyperGraphRAG 底层的普通边。</p>
+<p><strong>一个完整例子</strong>：</p>
+<pre><code>超边 r₁₂：Contains
+g_source：{ c_001（牛顿第一定律）, c_002（牛顿第二定律） }
+g_target：{ kf_001, kf_002, kf_003 }
+
+展开成普通边（笛卡尔积）：
+  c_001 ──Contains──▶ kf_001
+  c_001 ──Contains──▶ kf_002
+  c_001 ──Contains──▶ kf_003
+  c_002 ──Contains──▶ kf_001
+  c_002 ──Contains──▶ kf_002
+  c_002 ──Contains──▶ kf_003
+</code></pre>
+<p><strong>医疗领域的例子</strong>：</p>
+<pre><code>超边 r₁₂：Contains
+g_source：{ c_m001（2型糖尿病）, c_m002（糖尿病肾病） }
+g_target：{ kf_m001, kf_m002, kf_m003 }
+
+展开：
+  c_m001 ──Contains──▶ kf_m001（定义）
+  c_m001 ──Contains──▶ kf_m002（诊断标准）
+  c_m002 ──Contains──▶ kf_m003（治疗方案）
+</code></pre>
+<h3 id="53-超节点内部还是-g-r-g">5.3 超节点内部还是 (g, r, g)</h3>
+<p>这是理解分形的关键：<strong>任意超节点展开后，里面还是 (g, r, g) 结构</strong>。</p>
+<p><strong>叶子节点 vs 超节点</strong>：</p>
+<pre><code>叶子节点：最细粒度，展开后没有更细的结构
+         例如：c_001（牛顿第一定律）
+
+超节点：包含多个叶子节点，或包含多个子超节点
+         例如：g_书 = { g_章1, g_章2, ... }
+</code></pre>
+<p><strong>超节点展开的例子</strong>：</p>
+<pre><code>超节点 g_书 展开：
+  g_章1 ──下一个──▶ g_章2         ← 章与章的边
+  g_章1 ──上一个──▶ g_章2         ← 双向关系
+
+g_章1 本身展开 = { c_函数, c_导数, ... }
+  c_函数 ──Depends──▶ c_导数       ← 知识点与知识点的边
+
+g_章1 里每个 c_再展开 = { kf_001, kf_002, ... }
+  c_函数 ──Contains──▶ kf_001      ← 跨层超边
+</code></pre>
+<p>每一层都是 (g, r, g)，只是粒度不同。这就是分形。</p>
+<hr>
+<h2 id="六分形嵌套结构">六、分形嵌套结构</h2>
+<h3 id="61-什么是分形">6.1 什么是分形</h3>
+<p>子结构和整体结构同构。不管放大到哪个层级，看到的都是：节点 + 边 + 节点 + 边……</p>
+<pre><code>层级1：g_书 ──r──▶ g_章1
+层级2：g_章1 ──r──▶ g_节1
+层级3：g_节1 ──r──▶ g_段1
+层级4：c_001 ──Contains──▶ kf_001    ← 叶子层，粒度最细
+</code></pre>
+<h3 id="62-多领域嵌套示意">6.2 多领域嵌套示意</h3>
+<p><strong>法律领域</strong>：</p>
+<pre><code>g_民法典 ──包含──▶ g_合同编
+g_合同编 ──包含──▶ g_通则
+g_通则 ──包含──▶ c_合同解除权
+c_合同解除权 ──Contains──▶ kf_l001
+
+逐层展开路径：
+  民法典 &gt; 合同编 &gt; 通则 &gt; 合同解除权 &gt; 条款正文
+</code></pre>
+<p><strong>金融领域</strong>：</p>
+<pre><code>g_估值体系 ──包含──▶ g_相对估值
+g_相对估值 ──包含──▶ g_市盈率法
+g_市盈率法 ──包含──▶ c_市盈率
+c_市盈率 ──Contains──▶ kf_f001
+
+逐层展开路径：
+  估值体系 &gt; 相对估值 &gt; 市盈率法 &gt; 公式定义 &gt; 案例片段
+</code></pre>
+<h3 id="63-检索时的嵌套过程">6.3 检索时的嵌套过程</h3>
+<pre><code>用户问（医疗）：&quot;糖尿病肾病的治疗方案有哪些？&quot;
+
+Step 1：在 L1 找到 c_m002（糖尿病肾病）
+  → 同时通过 Related 边找到 c_m001（2型糖尿病）
+
+Step 2：通过 Contains 边展开 c_m002
+  → 找到它包含的所有 kf
+
+Step 3：过滤 domain = &quot;内分泌科.代谢疾病&quot; 的 kf
+  → 得到 kf_m003（治疗方案）
+
+Step 4：返回 kf_m003.content
+  → 找到具体的治疗方案描述
+</code></pre>
+<p><strong>逐层放大检索的示意图</strong>：</p>
+<pre><code>第1层放大：c_m002（糖尿病肾病）
+              │
+              ▼  Contains
+第2层放大：{ kf_m003, kf_m004, ... }
+              │
+              ▼  chapter 过滤
+第3层放大：{ kf_m003 }  ← 具体片段
+
+每一步放大，都是在 g 内部做 (g, r, g) 展开
+</code></pre>
+<hr>
+<h2 id="七l3-目标空间可选">七、L3 目标空间（可选）</h2>
+<h3 id="71-什么领域需要-l3">7.1 什么领域需要 L3</h3>
+<p>L3 是「目标层」，描述要达成什么。只有需要目标导向的领域才需要。</p>
+<pre><code>需要 L3：教育（学习目标）、医疗（诊断目标）、项目管理（里程碑）
+不需要 L3：法律（条文查询）、金融（估值分析）、客服（FAQ）
+</code></pre>
+<h3 id="72-实体learninggoal目标">7.2 实体：LearningGoal（目标）</h3>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>类型</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>id</td>
+<td>string</td>
+<td>唯一标识</td>
+</tr>
+<tr>
+<td>name</td>
+<td>string</td>
+<td>目标名称</td>
+</tr>
+<tr>
+<td>level</td>
+<td>int</td>
+<td>认知/操作层次 1~4</td>
+</tr>
+<tr>
+<td>description</td>
+<td>string</td>
+<td>目标描述</td>
+</tr>
+</tbody>
+</table>
+<h3 id="73-关系prerequisite">7.3 关系：Prerequisite</h3>
+<pre><code>同空间（L3→L3）：LG₁ ──Prerequisite──▶ LG₂
+跨空间（L3→L1）：LG₁ ──Prerequisite──▶ c_001
+</code></pre>
+<p><strong>多领域例子</strong>：</p>
+<pre><code># 医疗：诊断目标
+lg_m001（制定糖尿病治疗方案）
+  ──Prerequisite──▶ c_m001（2型糖尿病诊断标准）
+  ──Prerequisite──▶ c_m003（降糖药物分类）
+
+# 项目管理：里程碑
+lg_p001（完成系统上线）
+  ──Prerequisite──▶ lg_p002（完成UAT测试）
+  ──Prerequisite──▶ lg_p003（完成权限配置）
+</code></pre>
+<hr>
+<h2 id="八domain-的层级设计">八、domain 的层级设计</h2>
+<h3 id="81-来源">8.1 来源</h3>
+<p>LLM 自动从源文件的目录结构推断，不需要手动标注。</p>
+<h3 id="82-转换规则">8.2 转换规则</h3>
+<p>目录的层级结构 → domain 的点分隔字符串</p>
+<p><strong>医疗领域例子</strong>：</p>
+<pre><code>源文档目录：
+├── 第3章 代谢性疾病
+│   ├── 3.1 糖尿病
+│   │   ├── 3.1.1 1型糖尿病
+│   │   └── 3.1.2 2型糖尿病
+│   └── 3.2 甲状腺疾病
+
+LLM 推断 domain：
+  &quot;内分泌科.代谢疾病.糖尿病.2型糖尿病&quot;
+  &quot;内分泌科.代谢疾病.糖尿病.1型糖尿病&quot;
+  &quot;内分泌科.代谢疾病.甲状腺疾病&quot;
+</code></pre>
+<p><strong>金融领域例子</strong>：</p>
+<pre><code>源文档目录：
+├── 第2章 估值方法
+│   ├── 2.1 DCF
+│   └── 2.2相对估值
+│       ├── 2.2.1 市盈率
+│       └── 2.2.2 市净率
+
+LLM 推断 domain：
+  &quot;估值分析.DCF&quot;
+  &quot;估值分析.相对估值法.市盈率&quot;
+  &quot;估值分析.相对估值法.市净率&quot;
+</code></pre>
+<h3 id="83-domain-的一致性">8.3 domain 的一致性</h3>
+<pre><code>kf.domain = kf.c_id 指向的 c.domain
+</code></pre>
+<p>同一 c 下的所有 kf，domain 必须一致。</p>
+<hr>
+<h2 id="九ftype-与-source_file">九、ftype 与 source_file</h2>
+<h3 id="91-ftype--源文件格式">9.1 ftype = 源文件格式</h3>
+<p>ftype 不是内容类型，是文件的格式后缀。</p>
+<table>
+<thead>
+<tr>
+<th>用户输入</th>
+<th>ftype</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>医学教材.pdf</td>
+<td>pdf</td>
+</tr>
+<tr>
+<td>临床指南.txt</td>
+<td>txt</td>
+</tr>
+<tr>
+<td><a href="http://xn--1jqt8mw8prw1av5i.html">药品说明书.md</a></td>
+<td>md</td>
+</tr>
+<tr>
+<td>判例整理.docx</td>
+<td>docx</td>
+</tr>
+<tr>
+<td>网页内容.html</td>
+<td>html</td>
+</tr>
+</tbody>
+</table>
+<h3 id="92-source_file--文件id">9.2 source_file = 文件ID</h3>
+<p>由用户在导入时指定，用于追踪「这片知识来自哪份材料」。</p>
+<pre><code>source_file: &quot;内分泌学 Handbook 第3版 第12次印刷&quot;
+source_file: &quot;2024年修订版 合同法注释&quot;
+source_file: &quot;Wind数据库导出_2024Q1&quot;
+</code></pre>
+<h3 id="93-corpus_id--语料库id">9.3 corpus_id = 语料库ID</h3>
+<p>将同领域的多个 source_file 归为一个语料库。</p>
+<pre><code>corpus_id: 内分泌学教材库
+  └── source_file: 内分泌学 Handbook
+  └── source_file: 糖尿病诊疗指南
+  └── source_file: 药品说明书汇总
+
+corpus_id: 法律条文库
+  └── source_file: 民法典
+  └── source_file: 合同法司法解释
+</code></pre>
+<hr>
+<h2 id="十多-agent-协作">十、多 Agent 协作</h2>
+<h3 id="101-四个-agent-的分工">10.1 四个 Agent 的分工</h3>
+<pre><code>Orchestrator（主控）
+  接收用户输入，判断意图，分发给专业 Agent
+
+Indexing Agent（知识构建）
+  读文件 → 分块 → 提取实体 → 提取关系 → 写入存储
+
+Query Agent（知识检索）
+  分析问题 → 决定检索模式 → 展开超节点 → 聚合结果 → 生成答案
+
+Processing Agent（后处理）
+  对结果做格式化、摘要、关联外部知识等
+</code></pre>
+<h3 id="102-indexing-的完整流程">10.2 Indexing 的完整流程</h3>
+<pre><code>Step 1：用户导入文档
+  corpus_id = &quot;医疗知识库&quot;
+  source_file = &quot;内分泌学 Handbook&quot;
+
+Step 2：LLM 读目录结构，推断 domain
+  → &quot;内分泌科.代谢疾病.糖尿病.2型糖尿病&quot;
+
+Step 3：按 ftype + chapter 分块
+  → 每块 ~500 tokens
+
+Step 4：LLM 提取实体
+  → c_m001（2型糖尿病）, c_m002（糖尿病肾病）
+  → kf_m001, kf_m002, ...
+
+Step 5：LLM 提取关系
+  → c_m002 ──Related──▶ c_m001
+  → c_m002 ──Depends──▶ c_m003（血糖管理）
+
+Step 6：写入存储
+  → 节点写入 entities_vdb
+  → 片段写入 chunks_vdb
+  → 边写入 graph
+</code></pre>
+<h3 id="103-query-的完整流程">10.3 Query 的完整流程</h3>
+<pre><code>用户问：&quot;糖尿病肾病怎么治？&quot;
+
+Step 1：Query Agent 分析意图
+  → 实体：c_m002（糖尿病肾病）
+  → 模式：local + global 混合
+
+Step 2：向量检索找到相关的 c 和 kf
+  → c_m002, kf_m003（治疗方案）
+
+Step 3：展开超节点
+  → c_m002 ──Contains──▶ { kf_m003, kf_m004, ... }
+  → c_m002 ──Related──▶ c_m001（顺带返回相关知识）
+
+Step 4：过滤
+  → 只保留 domain 包含 &quot;糖尿病&quot; 的 kf
+
+Step 5：LLM 生成答案，附上参考来源
+  → kf_m003 来自 source_file=&quot;内分泌学 Handbook&quot;
+</code></pre>
+<hr>
+<h2 id="十一存储映射">十一、存储映射</h2>
+<p>HyperGraphRAG 底层实际存储方式：</p>
+<table>
+<thead>
+<tr>
+<th>我们设计的</th>
+<th>底层存成</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>L1 Concept</td>
+<td>图节点，role=entity</td>
+</tr>
+<tr>
+<td>L2 KF.content</td>
+<td>text_chunks KV（key = kf_id）</td>
+</tr>
+<tr>
+<td>L2 KF 向量</td>
+<td>chunks_vdb 向量索引</td>
+</tr>
+<tr>
+<td>L3 LearningGoal</td>
+<td>图节点，role=goal</td>
+</tr>
+<tr>
+<td>Contains/Depends/Related</td>
+<td>图里的普通边</td>
+</tr>
+<tr>
+<td>r₁₂ / r₃₁</td>
+<td>不独立存储，通过上述边实现</td>
+</tr>
+</tbody>
+</table>
+<p>超边是查询时的抽象视图，不是物理存储单位。</p>
+<hr>
+<h2 id="十二设计决策汇总">十二、设计决策汇总</h2>
+<table>
+<thead>
+<tr>
+<th>编号</th>
+<th>决策</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D1</td>
+<td>domain 获取</td>
+<td>LLM 读目录自动推断，点分隔字符串</td>
+</tr>
+<tr>
+<td>D2</td>
+<td>Contains 基数</td>
+<td>一对多，也允许多对多</td>
+</tr>
+<tr>
+<td>D3</td>
+<td>Prerequisite 指向</td>
+<td>支持 L3→L3 和 L3→L1</td>
+</tr>
+<tr>
+<td>D4</td>
+<td>超边独立存储</td>
+<td>不存储，通过普通边实现</td>
+</tr>
+<tr>
+<td>D5</td>
+<td>ftype 定义</td>
+<td>源文件格式，不预设枚举</td>
+</tr>
+<tr>
+<td>D6</td>
+<td>chapter 嵌套</td>
+<td>支持 1.2.3 这样的层级</td>
+</tr>
+<tr>
+<td>D7</td>
+<td>KP/KF 合并规则</td>
+<td>name 完全相同才合并（精确匹配）</td>
+</tr>
+<tr>
+<td>D8</td>
+<td>L3 是否必须</td>
+<td>不必须，由领域决定</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="十三各领域扩展参考">十三、各领域扩展参考</h2>
+<h3 id="131-教育领域">13.1 教育领域</h3>
+<pre><code>L1：知识点（KnowledgePoint）
+    例：牛顿第一定律、三角函数
+
+L2：教材片段（KnowledgeFragment）
+    例：从物理教材第3章第1节提取的段落
+
+L3：学习目标（LearningGoal）
+    例：能用自己的话解释惯性
+    level=2（理解层）
+</code></pre>
+<h3 id="132-医疗领域">13.2 医疗领域</h3>
+<pre><code>L1：疾病/症状概念
+    例：2型糖尿病、胰岛素抵抗
+
+L2：临床片段
+    例：诊断标准段落、用药指南段落
+
+L3：诊断/治疗目标
+    例：制定个体化降糖方案
+    level=3（应用层）
+</code></pre>
+<h3 id="133-法律领域">13.3 法律领域</h3>
+<pre><code>L1：法律概念
+    例：合同解除权、违约金条款
+
+L2：条文/判例片段
+    例：民法典第563条原文、相关判例摘要
+
+L3：不需要（法律查询是条文导向，不是目标导向）
+</code></pre>
+<h3 id="134-金融领域">13.4 金融领域</h3>
+<pre><code>L1：金融概念
+    例：DCF模型、市盈率、自由现金流
+
+L2：研报/数据片段
+    例：从估值报告提取的公式推导段落
+
+L3：投资决策目标
+    例：完成目标公司估值报告
+    level=3（应用层）
+</code></pre>
+<hr>
+<p><em>文档版本：v0.2（通用版，设计阶段）</em>
+<em>最后更新：2026-04-28</em></p>
+
+            
+            
+        </body>
+        </html>
