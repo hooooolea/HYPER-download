@@ -374,28 +374,47 @@ async def extract_entities(
         return merged
 
     # ============================================================
-    # Phase 1：并行抽取所有 chunk 的 Concept + Relation
+    # Phase 1：真正并行抽取所有 chunk 的 Concept + Relation
+    # 使用 asyncio.Semaphore 控制并发数，asyncio.gather 并发执行
     # ============================================================
-    logger.info("[Entity Extraction] Extracting concepts and relations...")
-    import time as time_module
-    chunk_results: list[dict] = []
-    for idx, (chunk_key, chunk_dp) in enumerate(ordered_chunks):
-        t0 = time_module.time()
-        result = await _call_extract_prompt(chunk_key, chunk_dp["content"])
-        elapsed = time_module.time() - t0
-        logger.info(f"[Chunk {idx+1}/{len(ordered_chunks)}] {chunk_key} done in {elapsed:.1f}s")
-        chunk_results.append({
-            "chunk_key": chunk_key,
-            "chunk_dp": chunk_dp,
-            "concepts": result.get("concepts", []),
-            "relations": result.get("relations", []),
-        })
-        ticks = PROMPTS["process_tickers"][idx % len(PROMPTS["process_tickers"])]
-        print(
-            f"{ticks} Processed {idx + 1}/{len(ordered_chunks)} chunks\r",
-            end="", flush=True,
-        )
+    logger.info("[Entity Extraction] Extracting concepts and relations (concurrent)...")
 
+    max_concurrent = global_config.get("llm_model_max_async", 16)
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def _call_with_semaphore(idx, chunk_key, chunk_dp):
+        async with semaphore:
+            t0 = asyncio.get_event_loop().time()
+            result = await _call_extract_prompt(chunk_key, chunk_dp["content"])
+            elapsed = asyncio.get_event_loop().time() - t0
+            logger.info(f"[Chunk {idx+1}/{len(ordered_chunks)}] {chunk_key} done in {elapsed:.1f}s")
+            return {
+                "chunk_key": chunk_key,
+                "chunk_dp": chunk_dp,
+                "concepts": result.get("concepts", []),
+                "relations": result.get("relations", []),
+            }
+
+    # 并发执行所有 chunk 的 entity 抽取
+    import time as time_module
+    total_start = time_module.time()
+    tasks = [
+        _call_with_semaphore(idx, chunk_key, chunk_dp)
+        for idx, (chunk_key, chunk_dp) in enumerate(ordered_chunks)
+    ]
+
+    # 用 tqdm_async 并发执行，带进度显示
+    chunk_results = []
+    for coro in tqdm_async(
+        asyncio.as_completed(tasks),
+        total=len(tasks),
+        desc="Extracting entities",
+    ):
+        result = await coro
+        chunk_results.append(result)
+
+    total_elapsed = time_module.time() - total_start
+    logger.info(f"[Entity Extraction] All {len(ordered_chunks)} chunks done in {total_elapsed:.1f}s")
     # ============================================================
     # Phase 2：全量 Concept exact-name 去重合并
     # Phase 2：全量 Concept exact-name 去重合并（归一化后去重）
