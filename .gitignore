@@ -189,4 +189,4 @@ plot/*
 evaluation/contexts/*
 evaluation/datasets/*
 evaluation/expr/*
-evaluation/results/*
+evaluation/results/*venv_test/

@@ -7,9 +7,11 @@ from functools import partial
 from typing import Type, cast
 
 from .llm import (
-    minimax_complete_if_cache,
+    openai_complete_if_cache,
     zhipu_embedding,
+    hf_model_complete,
 )
+
 from .operate import (
     chunking_by_token_size,
     chunking_by_chapter,
@@ -39,17 +41,9 @@ from .storage import (
     NetworkXStorage,
 )
 
-# future KG integrations
-
-# from .kg.ArangoDB_impl import (
-#     GraphStorage as ArangoDBStorage
-# )
-
 
 def lazy_external_import(module_name: str, class_name: str):
     """Lazily import a class from an external module based on the package of the caller."""
-
-    # Get the caller's module and package
     import inspect
 
     caller_frame = inspect.currentframe().f_back
@@ -58,11 +52,7 @@ def lazy_external_import(module_name: str, class_name: str):
 
     def import_class(*args, **kwargs):
         import importlib
-
-        # Import the module using importlib
         module = importlib.import_module(module_name, package=package)
-
-        # Get the class from the module and instantiate it
         cls = getattr(module, class_name)
         return cls(*args, **kwargs)
 
@@ -81,24 +71,12 @@ TiDBVectorDBStorage = lazy_external_import(".kg.tidb_impl", "TiDBVectorDBStorage
 
 
 def always_get_an_event_loop() -> asyncio.AbstractEventLoop:
-    """
-    Ensure that there is always an event loop available.
-
-    This function tries to get the current event loop. If the current event loop is closed or does not exist,
-    it creates a new event loop and sets it as the current event loop.
-
-    Returns:
-        asyncio.AbstractEventLoop: The current or newly created event loop.
-    """
     try:
-        # Try to get the current event loop
         current_loop = asyncio.get_event_loop()
         if current_loop.is_closed():
             raise RuntimeError("Event loop is closed.")
         return current_loop
-
     except RuntimeError:
-        # If no event loop exists or it is closed, create a new one
         logger.info("Creating a new event loop in main thread.")
         new_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(new_loop)
@@ -110,7 +88,6 @@ class HyperGraphRAG:
     working_dir: str = field(
         default_factory=lambda: f"hypergraphrag_cache_{datetime.now().strftime('%Y-%m-%d-%H:%M:%S')}"
     )
-    # Default not to use embedding cache
     embedding_cache_config: dict = field(
         default_factory=lambda: {
             "enabled": False,
@@ -150,20 +127,17 @@ class HyperGraphRAG:
     # embedding_func: EmbeddingFunc = field(default_factory=lambda:hf_embedding)
     embedding_func: EmbeddingFunc = field(default_factory=lambda: zhipu_embedding)
     embedding_batch_num: int = 32
-    embedding_dim: int = 2048  # 智谱 embedding-3 返回 2048 维
+    embedding_dim: int = 2048
     embedding_func_max_async: int = 16
 
     # LLM
-    llm_model_func: callable = minimax_complete_if_cache  # hf_model_complete#
-    llm_model_name: str = "MiniMax-M2.7"  # MiniMax 国内版模型
-    llm_model_max_token_size: int = 32768
+    llm_model_func: callable = field(default_factory=lambda: openai_complete_if_cache)
+    llm_model_name: str = "Qwen/Qwen2.5-72B-Instruct-GPTQ-Int4"
+    llm_model_kwargs: dict = field(default_factory=lambda: {
+        "api_key": "EMPTY",
+        "base_url": "http://localhost:8000/v1",
+    })
     llm_model_max_async: int = 16
-    llm_model_kwargs: dict = field(
-        default_factory=lambda: {
-            "api_key": None,           # 从环境变量 MINIMAX_API_KEY 读取
-            "base_url": "https://api.minimax.chat/v1",
-        }
-    )
 
     # storage
     vector_db_storage_cls_kwargs: dict = field(default_factory=dict)
@@ -208,9 +182,10 @@ class HyperGraphRAG:
             else None
         )
         if self.embedding_func is not None:
-            self.embedding_func = limit_async_func_call(self.embedding_func_max_async)(
-                self.embedding_func
-            )
+            # self.embedding_func = limit_async_func_call(self.embedding_func_max_async)(
+            #     self.embedding_func
+            # )
+            pass
 
         self.full_docs = self.key_string_value_json_storage_cls(
             namespace="full_docs",
@@ -218,23 +193,18 @@ class HyperGraphRAG:
             embedding_func=self.embedding_func,
         )
 
-        # Phase 1 重命名：text_chunks → fragment 存储（KV）
         self.text_chunks = self.key_string_value_json_storage_cls(
             namespace="text_chunks",
             global_config=asdict(self),
             embedding_func=self.embedding_func,
         )
 
-        # Phase 1 重命名：chunk_entity_relation_graph → 多角色图存储
-        # role = "concept" / "fragment" / "goal" / "hyperedge"
         self.chunk_entity_relation_graph = self.graph_storage_cls(
             namespace="chunk_entity_relation",
             global_config=asdict(self),
             embedding_func=self.embedding_func,
         )
 
-        # Phase 1 重命名：entities_vdb → concept_vdb
-        # 存 L1 Concept 的向量，向量来源 = name + domain
         self.concept_vdb = self.vector_db_storage_cls(
             namespace="concepts",
             global_config=asdict(self),
@@ -242,8 +212,6 @@ class HyperGraphRAG:
             meta_fields={"entity_name"},
         )
 
-        # Phase 1：新增 goal_vdb（存 L3 LearningGoal 向量，仅当启用 L3 时使用）
-        # 向量来源 = name + description + level
         self.goal_vdb = self.vector_db_storage_cls(
             namespace="goals",
             global_config=asdict(self),
@@ -251,8 +219,6 @@ class HyperGraphRAG:
             meta_fields={"goal_name"},
         )
 
-        # Phase 1 重命名：hyperedges_vdb → relations_vdb
-        # 存关系的描述向量（Contains / Depends / Related / Prerequisite）
         self.relations_vdb = self.vector_db_storage_cls(
             namespace="relations",
             global_config=asdict(self),
@@ -260,8 +226,6 @@ class HyperGraphRAG:
             meta_fields={"src_id", "tgt_id", "content"},
         )
 
-        # Phase 1 重命名：chunks_vdb → fragment_vdb
-        # 存 L2 KnowledgeFragment 的向量，向量来源 = content
         self.fragment_vdb = self.vector_db_storage_cls(
             namespace="fragments",
             global_config=asdict(self),
@@ -269,32 +233,28 @@ class HyperGraphRAG:
         )
 
         if self.llm_model_func is not None:
-            self.llm_model_func = limit_async_func_call(self.llm_model_max_async)(
-                partial(
-                    self.llm_model_func,
-                    hashing_kv=self.llm_response_cache,
-                    **self.llm_model_kwargs,
-                )
+            # limit_async_func_call removed due to tenacity copy() signature introspection bug
+            self.llm_model_func = partial(
+                self.llm_model_func,
+                model=self.llm_model_name,
+                hashing_kv=self.llm_response_cache,
+                **self.llm_model_kwargs,
             )
 
     def _get_storage_class(self) -> Type[BaseGraphStorage]:
         return {
-            # kv storage
             "JsonKVStorage": JsonKVStorage,
             "OracleKVStorage": OracleKVStorage,
             "MongoKVStorage": MongoKVStorage,
             "TiDBKVStorage": TiDBKVStorage,
-            # vector storage
             "NanoVectorDBStorage": NanoVectorDBStorage,
             "OracleVectorDBStorage": OracleVectorDBStorage,
             "MilvusVectorDBStorge": MilvusVectorDBStorge,
             "ChromaVectorDBStorage": ChromaVectorDBStorage,
             "TiDBVectorDBStorage": TiDBVectorDBStorage,
-            # graph storage
             "NetworkXStorage": NetworkXStorage,
             "Neo4JStorage": Neo4JStorage,
             "OracleGraphStorage": OracleGraphStorage,
-            # "ArangoDBStorage": ArangoDBStorage
         }
 
     def insert(self, string_or_strings):
@@ -307,7 +267,6 @@ class HyperGraphRAG:
             if isinstance(string_or_strings, str):
                 string_or_strings = [string_or_strings]
 
-            # === Phase 4 改造：支持 dict 输入（带 domain/chapter_hint 等元信息）===
             new_docs = {}
             for c in string_or_strings:
                 if isinstance(c, dict):
@@ -336,7 +295,6 @@ class HyperGraphRAG:
                         overlap_token_size=self.chunk_overlap_token_size,
                         max_token_size=self.chunk_token_size,
                         tiktoken_model=self.tiktoken_model_name,
-                        # Phase 1 新增字段（由调用方通过 doc 元信息传入）
                         corpus_id=doc.get("corpus_id", ""),
                         source_file=doc.get("source_file", doc_key),
                         ftype=doc.get("ftype", ""),
@@ -400,7 +358,6 @@ class HyperGraphRAG:
     async def ainsert_custom_kg(self, custom_kg: dict):
         update_storage = False
         try:
-            # Insert chunks into vector storage
             all_chunks_data = {}
             chunk_to_source_map = {}
             for chunk_data in custom_kg.get("chunks", []):
@@ -418,29 +375,24 @@ class HyperGraphRAG:
             if self.text_chunks is not None and all_chunks_data:
                 await self.text_chunks.upsert(all_chunks_data)
 
-            # Insert entities into knowledge graph
             all_entities_data = []
             for entity_data in custom_kg.get("entities", []):
                 entity_name = f'"{entity_data["entity_name"].upper()}"'
                 entity_type = entity_data.get("entity_type", "UNKNOWN")
                 description = entity_data.get("description", "No description provided")
-                # source_id = entity_data["source_id"]
                 source_chunk_id = entity_data.get("source_id", "UNKNOWN")
                 source_id = chunk_to_source_map.get(source_chunk_id, "UNKNOWN")
 
-                # Log if source_id is UNKNOWN
                 if source_id == "UNKNOWN":
                     logger.warning(
                         f"Entity '{entity_name}' has an UNKNOWN source_id. Please check the source mapping."
                     )
 
-                # Prepare node data
                 node_data = {
                     "entity_type": entity_type,
                     "description": description,
                     "source_id": source_id,
                 }
-                # Insert node data into the knowledge graph
                 await self.chunk_entity_relation_graph.upsert_node(
                     entity_name, node_data=node_data
                 )
@@ -448,7 +400,6 @@ class HyperGraphRAG:
                 all_entities_data.append(node_data)
                 update_storage = True
 
-            # Insert relationships into knowledge graph
             all_relationships_data = []
             for relationship_data in custom_kg.get("relationships", []):
                 src_id = f'"{relationship_data["src_id"].upper()}"'
@@ -456,17 +407,14 @@ class HyperGraphRAG:
                 description = relationship_data["description"]
                 keywords = relationship_data["keywords"]
                 weight = relationship_data.get("weight", 1.0)
-                # source_id = relationship_data["source_id"]
                 source_chunk_id = relationship_data.get("source_id", "UNKNOWN")
                 source_id = chunk_to_source_map.get(source_chunk_id, "UNKNOWN")
 
-                # Log if source_id is UNKNOWN
                 if source_id == "UNKNOWN":
                     logger.warning(
                         f"Relationship from '{src_id}' to '{tgt_id}' has an UNKNOWN source_id. Please check the source mapping."
                     )
 
-                # Check if nodes exist in the knowledge graph
                 for need_insert_id in [src_id, tgt_id]:
                     if not (
                         await self.chunk_entity_relation_graph.has_node(need_insert_id)
@@ -480,7 +428,6 @@ class HyperGraphRAG:
                             },
                         )
 
-                # Insert edge into the knowledge graph
                 await self.chunk_entity_relation_graph.upsert_edge(
                     src_id,
                     tgt_id,
@@ -500,7 +447,6 @@ class HyperGraphRAG:
                 all_relationships_data.append(edge_data)
                 update_storage = True
 
-            # Phase 1: Insert concepts into vector storage
             if self.concept_vdb is not None:
                 data_for_vdb = {
                     compute_mdhash_id(dp["entity_name"], prefix="ent-"): {
@@ -511,7 +457,6 @@ class HyperGraphRAG:
                 }
                 await self.concept_vdb.upsert(data_for_vdb)
 
-            # Phase 1: Insert relations into vector storage
             if self.relations_vdb is not None:
                 data_for_vdb = {
                     compute_mdhash_id(dp["src_id"] + dp["tgt_id"], prefix="rel-"): {
@@ -534,9 +479,8 @@ class HyperGraphRAG:
         return loop.run_until_complete(self.aquery(query, param))
 
     async def aquery(self, query: str, param: QueryParam = QueryParam()):
-        # Phase 4 修复：支持所有 query 模式路由
         if param.mode not in ["local", "global", "hybrid", "naive", "goal_driven"]:
-            param.mode = "hybrid"  # 默认降级为 hybrid
+            param.mode = "hybrid"
         response = await kg_query(
             query,
             self.chunk_entity_relation_graph,

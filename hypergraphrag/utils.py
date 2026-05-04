@@ -132,13 +132,12 @@ def limit_async_func_call(max_size: int, waitting_time: float = 0.0001):
         """Not using async.Semaphore to aovid use nest-asyncio"""
         __current_size = 0
 
-        @wraps(func)
-        async def wait_func(*args, **kwargs):
+        async def wait_func(**kwargs):
             nonlocal __current_size
             while __current_size >= max_size:
                 await asyncio.sleep(waitting_time)
             __current_size += 1
-            result = await func(*args, **kwargs)
+            result = await func(**kwargs)
             __current_size -= 1
             return result
 

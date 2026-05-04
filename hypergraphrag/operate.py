@@ -81,7 +81,7 @@ async def _handle_entity_relation_summary(
     )
     use_prompt = prompt_template.format(**context_base)
     logger.debug(f"Trigger summary: {entity_or_relation_name}")
-    summary = await use_llm_func(use_prompt, max_tokens=summary_max_tokens)
+    summary = await use_llm_func(prompt=use_prompt, max_tokens=summary_max_tokens)
     return summary
 
 
@@ -304,7 +304,7 @@ async def extract_entities(
         prompt = entity_extract_prompt.format(**context_base, input_text=content)
         history = pack_user_ass_to_openai_messages(prompt, "")
 
-        first_result = await use_llm_func(prompt)
+        first_result = await use_llm_func(prompt=prompt)
         history += pack_user_ass_to_openai_messages(prompt, first_result)
 
         # 解析第一个结果，累积到 merged dict
@@ -334,7 +334,7 @@ async def extract_entities(
         # glean 循环：继续抽取更多 entity，逐个解析并合并
         for glean_index in range(entity_extract_max_gleaning):
             glean_result = await use_llm_func(
-                PROMPTS.get("entiti_continue_extraction", ""),
+                prompt=PROMPTS.get("entiti_continue_extraction", ""),
                 history_messages=history,
             )
             history += pack_user_ass_to_openai_messages(
@@ -365,7 +365,7 @@ async def extract_entities(
             if glean_index == entity_extract_max_gleaning - 1:
                 break
             if_loop_result = await use_llm_func(
-                PROMPTS.get("entiti_if_loop_extraction", ""),
+                prompt=PROMPTS.get("entiti_if_loop_extraction", ""),
                 history_messages=history,
             )
             if if_loop_result.strip().strip('"').strip("'").lower() != "yes":
