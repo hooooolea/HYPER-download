@@ -330,6 +330,51 @@ async def extract_entities(
                 merged["relations"].extend(parsed.get("relations", []))
         except json.JSONDecodeError as e:
             logger.warning(f"JSON parse error for chunk {chunk_key} (first result): {e}")
+            # Fallback: 尝试解析纯文本格式 CONCEPTS: ... | RELATIONS: ...
+            try:
+                _text = first_result.strip()
+                # 去掉 markdown code fence
+                if _text.startswith("```"):
+                    _lines = _text.split("\n")
+                    _text = "\n".join(_lines[1:-1] if _lines[-1] == "```" else _lines[1:])
+                elif "```" in _text:
+                    _fi = _text.find("```")
+                    _la = _text.rfind("```")
+                    if _la > _fi:
+                        _text = _text[_fi + 3 : _la]
+
+                # 解析 CONCEPTS 行
+                _concept_match = re.search(r"CONCEPTS:\s*(.+?)(?:\nRELATIONS:|$)", _text, re.DOTALL)
+                if _concept_match:
+                    for _item in _concept_match.group(1).split("|"):
+                        _item = _item.strip()
+                        if not _item:
+                            continue
+                        _name_match = re.match(r"(.+?)\s*\(domain:\s*([^;]+);\s*desc:\s*(.+?)\)", _item)
+                        if _name_match:
+                            merged["concepts"].append({
+                                "name": _name_match.group(1).strip(),
+                                "domain": [_name_match.group(2).strip()],
+                                "description": _name_match.group(3).strip()
+                            })
+
+                # 解析 RELATIONS 行
+                _rel_match = re.search(r"RELATIONS:\s*(.+?)(?:\n|$)", _text, re.DOTALL)
+                if _rel_match:
+                    for _item in _rel_match.group(1).split("|"):
+                        _item = _item.strip()
+                        if not _item:
+                            continue
+                        _rel_match2 = re.match(r"(.+?)\s*->\s*(.+?)\s*\(type:\s*([^;]+);\s*desc:\s*(.+?)\)", _item)
+                        if _rel_match2:
+                            merged["relations"].append({
+                                "src": _rel_match2.group(1).strip(),
+                                "tgt": _rel_match2.group(2).strip(),
+                                "type": _rel_match2.group(3).strip(),
+                                "description": _rel_match2.group(4).strip()
+                            })
+            except Exception as _fallback_err:
+                logger.warning(f"Fallback parse also failed for chunk {chunk_key}: {_fallback_err}")
 
         # glean 循环：继续抽取更多 entity，逐个解析并合并
         for glean_index in range(entity_extract_max_gleaning):

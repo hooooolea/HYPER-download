@@ -58,6 +58,10 @@ Use {language} as output language.
   ]
 }}
 
+IMPORTANT: If you cannot output valid JSON, use this plain text format instead:
+CONCEPTS: concept1 (domain: domain1; desc: description) | concept2 (domain: domain2; desc: description) | ...
+RELATIONS: src1->tgt1 (type: Depends; desc: description) | src2->tgt2 (type: Related; desc: description) | ...
+
 -Examples-
 {examples}
 
