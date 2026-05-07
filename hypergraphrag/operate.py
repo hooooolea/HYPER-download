@@ -331,6 +331,9 @@ async def extract_entities(
         except json.JSONDecodeError as e:
             logger.warning(f"JSON parse error for chunk {chunk_key} (first result): {e}")
             # Fallback: 尝试解析纯文本格式 CONCEPTS: ... | RELATIONS: ...
+            # 支持两种格式：
+            # 1. 纯文本：CONCEPTS: concept1 (domain: ...; desc: ...) | ...
+            # 2. Markdown：**CONCEPTS:**\n* concept1 (domain: ...; desc: ...) | ...
             try:
                 _text = first_result.strip()
                 # 去掉 markdown code fence
@@ -343,6 +346,12 @@ async def extract_entities(
                     if _la > _fi:
                         _text = _text[_fi + 3 : _la]
 
+                # 去掉 markdown 格式：**CONCEPTS:**, * bullet, **bold**，以及概念名后的别名如 (function)
+                _text = re.sub(r"\*\*([A-Z]+):\*\*", lambda m: m.group(1) + ":", _text)
+                _text = re.sub(r"^\* ", "", _text, flags=re.MULTILINE)
+                _text = re.sub(r"\*\*([^*]+)\*\*", r"\1", _text)
+                _text = re.sub(r"\n\* ", "\n", _text)
+
                 # 解析 CONCEPTS 行
                 _concept_match = re.search(r"CONCEPTS:\s*(.+?)(?:\nRELATIONS:|$)", _text, re.DOTALL)
                 if _concept_match:
@@ -350,7 +359,9 @@ async def extract_entities(
                         _item = _item.strip()
                         if not _item:
                             continue
-                        _name_match = re.match(r"(.+?)\s*\(domain:\s*([^;]+);\s*desc:\s*(.+?)\)", _item)
+                        # 先去掉概念名后的 (alias) 别名，如 "函数 (function)" -> "函数"
+                        _item = re.sub(r"^(.+?)\s*\([^)]+\)\s*", r"\1", _item)
+                        _name_match = re.match(r"^(.+?)\s*\(domain:\s*([^;]+);\s*desc:\s*(.+?)\)$", _item)
                         if _name_match:
                             merged["concepts"].append({
                                 "name": _name_match.group(1).strip(),
@@ -365,7 +376,13 @@ async def extract_entities(
                         _item = _item.strip()
                         if not _item:
                             continue
-                        _rel_match2 = re.match(r"(.+?)\s*->\s*(.+?)\s*\(type:\s*([^;]+);\s*desc:\s*(.+?)\)", _item)
+                        # 处理 markdown 斜体或 bold 的残留格式
+                        _item = re.sub(r"\*\*([^*]+)\*\*", r"\1", _item)
+                        # 去掉 src/tgt 中的 (alias)，如 "函数 -> 变量 (variables)" -> "函数 -> 变量"
+                        _item_clean = re.sub(r"^(.+?)\s*\([^)]+\)\s*", r"\1", _item)
+                        _item_clean = re.sub(r"\s*\([^)]+\)\s*->", "->", _item_clean)
+                        _item_clean = re.sub(r"->\s*\([^)]+\)\s*", "->", _item_clean)
+                        _rel_match2 = re.match(r"^(.+?)\s*->\s*(.+?)\s*\(type:\s*([^;]+);\s*desc:\s*(.+?)\)$", _item_clean)
                         if _rel_match2:
                             merged["relations"].append({
                                 "src": _rel_match2.group(1).strip(),
