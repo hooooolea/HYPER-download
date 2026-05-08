@@ -40,8 +40,6 @@ Output format for answer:
                 base_url="http://localhost:11434/v1",
                 api_key="ollama",
                 temperature=0.7,
-                caching=True,
-                cache=None,
             )
         )
         d['generation'] = response.strip()
