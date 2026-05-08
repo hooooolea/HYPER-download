@@ -158,7 +158,19 @@ if os.path.exists(_graph_file) and self.chunk_entity_relation_graph.number_of_no
 llm_model_max_token_size: int = 2048
 ```
 
-### 问题7: contexts 和 datasets 软链接问题
+### 问题8: llm_kwargs 属性名拼写错误
+
+**现象**: `AttributeError: 'HyperGraphRAG' object has no attribute 'llm_kwargs'`
+
+**原因**: dataclass 字段名是 `llm_model_kwargs`，但 `__post_init__` 里写成了 `self.llm_kwargs`（少了 `_model`）
+
+**解决方案**: 修复 `hypergraphrag.py` 第 244-245 行：
+```python
+_base_url = self.llm_model_kwargs.get("base_url")
+_api_key = self.llm_model_kwargs.get("api_key")
+```
+
+### 问题9: contexts 和 datasets 软链接问题
 
 **现象**: 软链接指向 Mac 本地路径 `/Users/ejuer/Desktop/...`，在服务器上无效
 
