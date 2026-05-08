@@ -7,7 +7,7 @@ import asyncio
 
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from hypergraphrag.llm import minimax_complete_if_cache
+from hypergraphrag.llm import openai_complete_if_cache
 
 
 def generate_response(d):
@@ -33,7 +33,16 @@ Output format for answer:
     d['prompt'] = prompt
     try:
         response = asyncio.run(
-            minimax_complete_if_cache(prompt, temperature=0.7)
+            openai_complete_if_cache(
+                model="llama3.1:8b",
+                prompt=prompt,
+                system_prompt=None,
+                base_url="http://localhost:11434/v1",
+                api_key="ollama",
+                temperature=0.7,
+                caching=True,
+                cache=None,
+            )
         )
         d['generation'] = response.strip()
     except Exception as e:
