@@ -5,11 +5,11 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
 # MiniMax API 配置（从环境变量读取）
-# 确保 MINIMAX_API_KEY 已设置（可在 ~/.zshrc 或 shell 中配置）
+# 确保 OLLAMA_API_KEY 已设置（使用 Ollama 本地推理）
 
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from hypergraphrag.llm import minimax_complete_if_cache
+from hypergraphrag.llm import openai_complete_if_cache
 
 
 def cal_gen(question, answers, generation, f1_score):
@@ -133,9 +133,16 @@ Explain why you gave this score.
         try:
             prompt = build_prompt(metric)
 
-            # 使用 MiniMax 同步调用（ThreadPoolExecutor 中运行）
+            # 使用 Ollama 同步调用（ThreadPoolExecutor 中运行）
             response = asyncio.run(
-                minimax_complete_if_cache(prompt, temperature=0)
+                openai_complete_if_cache(
+                    model="llama3.1:8b",
+                    prompt=prompt,
+                    system_prompt=None,
+                    base_url="http://localhost:11434/v1",
+                    api_key="ollama",
+                    temperature=0,
+                )
             )
 
             content = response.strip()
