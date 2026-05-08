@@ -138,6 +138,7 @@ class HyperGraphRAG:
         "base_url": "http://localhost:8000/v1",
     })
     llm_model_max_async: int = 16
+    llm_model_max_token_size: int = 2048
 
     # storage
     vector_db_storage_cls_kwargs: dict = field(default_factory=dict)

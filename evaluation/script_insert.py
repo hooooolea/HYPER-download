@@ -35,6 +35,6 @@ WORKING_DIR = f"expr/{cls}"
 if not os.path.exists(WORKING_DIR):
     os.makedirs(WORKING_DIR)
 
-rag = HyperGraphRAG(working_dir=WORKING_DIR, embedding_func_max_async=32, llm_model_max_async=32, llm_model_name="llama3.1:8b", llm_model_kwargs={"base_url": "http://localhost:11434/v1", "api_key": "ollama"})
+rag = HyperGraphRAG(working_dir=WORKING_DIR, embedding_func_max_async=32, llm_model_max_async=16, llm_model_name="llama3.1:8b", llm_model_kwargs={"base_url": "http://localhost:11434/v1", "api_key": "ollama", "max_tokens": 2048})
 
 insert_text(rag, f"contexts/{cls}_contexts.json")
