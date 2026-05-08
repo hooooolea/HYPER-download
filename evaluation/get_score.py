@@ -1,3 +1,6 @@
+import nest_asyncio
+nest_asyncio.apply()
+
 import json
 import os
 from eval import cal_em, cal_f1
