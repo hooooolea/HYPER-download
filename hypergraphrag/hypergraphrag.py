@@ -318,17 +318,22 @@ class HyperGraphRAG:
             await self.fragment_vdb.upsert(inserting_chunks)
 
             logger.info("[Entity Extraction]...")
-            maybe_new_kg = await extract_entities(
-                inserting_chunks,
-                knowledge_graph_inst=self.chunk_entity_relation_graph,
-                concept_vdb=self.concept_vdb,
-                relations_vdb=self.relations_vdb,
-                global_config=asdict(self),
-            )
-            if maybe_new_kg is None:
-                logger.warning("No new hyperedges and entities found")
-                return
-            self.chunk_entity_relation_graph = maybe_new_kg
+            # 断点判断：如果 graphml 文件已有节点，说明实体已经抽取过，跳过
+            _graph_file = os.path.join(self.working_dir, "graph_chunk_entity_relation.graphml")
+            if os.path.exists(_graph_file) and self.chunk_entity_relation_graph._graph.number_of_nodes() > 0:
+                logger.info(f"[Entity Extraction] Skipped — graph already has {self.chunk_entity_relation_graph._graph.number_of_nodes()} nodes from previous run")
+            else:
+                maybe_new_kg = await extract_entities(
+                    inserting_chunks,
+                    knowledge_graph_inst=self.chunk_entity_relation_graph,
+                    concept_vdb=self.concept_vdb,
+                    relations_vdb=self.relations_vdb,
+                    global_config=asdict(self),
+                )
+                if maybe_new_kg is None:
+                    logger.warning("No new hyperedges and entities found")
+                    return
+                self.chunk_entity_relation_graph = maybe_new_kg
 
             await self.full_docs.upsert(new_docs)
             await self.text_chunks.upsert(inserting_chunks)
