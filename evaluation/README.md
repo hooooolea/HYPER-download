@@ -1,70 +1,36 @@
 # HyperGraphRAG Evaluation
 
-### Preparation
-First, to evaluate HyperGraphRAG, we should use ```evaluation``` as the working directory. 
+> 评测流程文档见 [PIPELINE.md](./PIPELINE.md)
+
+## 快速开始
+
 ```bash
-cd evaluation
-```
-Then, we need to set openai api key in ```openai_api_key.txt``` file. (We use [www.apiyi.com](https://www.apiyi.com/) for LLM server.)
+# 1. 启动 Ollama
+ollama serve
 
-Last, we need download the contexts and datasets from [Terabox](https://1024terabox.com/s/13cV8oy4kXurqTzYl9j94-g) and put them in the ```contexts``` and ```datasets``` folders. 
+# 2. 设置环境变量
+export ZHIPUAI_API_KEY="your_key"
 
-```
-HyperGraphRAG/
-└── evaluation/
-    ├── contexts/   
-        ├── hypertension_contexts.json   
-        ├── agriculture_contexts.json    
-        ├── cs_contexts.json                  
-        ├── legal_contexts.json                    
-        └── mix_contexts.json    
-    ├── datasets/           
-        ├── hypertension/                             
-            └── questions.json     
-        ├── agriculture/                            
-            └── questions.json 
-        ├── cs/                            
-            └── questions.json 
-        ├── legal/                             
-            └── questions.json 
-        └── mix/                              
-            └── questions.json
-    └── openai_api_key.txt                               
-```
+# 3. Insert
+source ~/HYPER-download/venv/bin/activate
+cd ~/HYPER-download/evaluation
+python script_insert.py --cls hypertension
 
-### Step1. Knowledge HyperGraph Construction
-```bash
-nohup python script_insert.py --cls hypertension > result_hypertension_insert.log 2>&1 &
-# nohup python script_insert.py --cls agriculture > result_agriculture_insert.log 2>&1 &
-# nohup python script_insert.py --cls cs > result_cs_insert.log 2>&1 &
-# nohup python script_insert.py --cls legal > result_legal_insert.log 2>&1 &
-# nohup python script_insert.py --cls mix > result_mix_insert.log 2>&1 &
-```
-
-### Step2. Retrieve Knowledge of HyperGraphRAG
-```bash
+# 4. Query
 python script_hypergraphrag.py --data_source hypertension
-# python script_standardrag.py --data_source hypertension
-# python script_naivegeneration.py --data_source hypertension
+
+# 5. Generation
+python get_generation.py --data_source hypertension
+
+# 6. Score
+python get_score.py --data_source hypertension
 ```
 
-### Step3. Generate Based on Retrieved Knowledge
+## 数据文件
+
+从 Mac 传到服务器：
 ```bash
-python get_generation.py --data_sources hypertension --methods HyperGraphRAG
-# python get_generation.py --data_sources hypertension --methods StandardRAG
-# python get_generation.py --data_sources hypertension --methods NaiveGeneration
+scp -r -P 23 ~/Desktop/auto-aiwork/hermes_doc/HyperGraphRAG-contexts\&datasets/contexts root@106.75.68.167:/root/HYPER-download/evaluation/
+scp -r -P 23 ~/Desktop/auto-aiwork/hermes_doc/HyperGraphRAG-contexts\&datasets/datasets/* root@106.75.68.167:/root/HYPER-download/evaluation/datasets/
 ```
 
-### Step4. Evaluate the Generation
-```bash
-CUDA_VISIBLE_DEVICES=0 python get_score.py --data_source hypertension --method HyperGraphRAG
-# CUDA_VISIBLE_DEVICES=0 python get_score.py --data_source hypertension --method StandardRAG
-# CUDA_VISIBLE_DEVICES=0 python get_score.py --data_source hypertension --method NaiveGeneration
-```
-
-### Step5. See Evaluation Results
-```bash
-python see_score.py --data_source hypertension --method HyperGraphRAG
-# python see_score.py --data_source hypertension --method StandardRAG
-# python see_score.py --data_source hypertension --method NaiveGeneration
-```
