@@ -241,8 +241,8 @@ class HyperGraphRAG:
             # Use a plain wrapper function instead of functools.partial
             # to avoid tenacity copy() signature introspection bug with partial
             _model_name = self.llm_model_name
-            _base_url = self.llm_kwargs.get("base_url")
-            _api_key = self.llm_kwargs.get("api_key")
+            _base_url = self.llm_model_kwargs.get("base_url")
+            _api_key = self.llm_model_kwargs.get("api_key")
             _cache = self.llm_response_cache
 
             async def llm_wrapper(prompt, system_prompt=None, history_messages=[], stream=False, **kwargs):
