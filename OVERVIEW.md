@@ -6,6 +6,16 @@
 
 数据集：hypertension、agriculture、cs、legal、mix
 
+## 当前进度
+
+| 数据集 | Insert | Query | Generation | Scoring |
+|--------|--------|-------|------------|---------|
+| hypertension | ✅ | 进行中 | ⏳ | ⏳ |
+| agriculture | ⏳ | ⏳ | ⏳ | ⏳ |
+| cs | ⏳ | ⏳ | ⏳ | ⏳ |
+| legal | ⏳ | ⏳ | ⏳ | ⏳ |
+| mix | ⏳ | ⏳ | ⏳ | ⏳ |
+
 ## 技术架构
 
 - **LLM**: Ollama + llama3.1:8b（本地推理，OpenAI 兼容 API）
@@ -44,6 +54,12 @@ python get_generation.py --data_source hypertension
 python get_score.py --data_source hypertension
 ```
 
+## 下一步计划
+
+1. hypertension query 跑完后，运行 generation + scoring
+2. 其余 4 个 dataset（agriculture、cs、legal、mix）各跑一遍完整的 4 步流程
+3. 汇总 5 个 dataset 的 EM、F1、R-Sim、Gen 指标结果
+
 ## 关键配置
 
 ### script_insert.py
@@ -56,7 +72,7 @@ rag = HyperGraphRAG(
     llm_model_name="llama3.1:8b",
     llm_model_kwargs={
         "base_url": "http://localhost:11434/v1",
-        "api_key": "ollama"
+        "api_key": "***"
     }
 )
 ```
@@ -69,7 +85,7 @@ rag = HyperGraphRAG(
     llm_model_name="llama3.1:8b",
     llm_model_kwargs={
         "base_url": "http://localhost:11434/v1",
-        "api_key": "ollama"
+        "api_key": "***"
     }
 )
 ```
@@ -86,10 +102,6 @@ rag = HyperGraphRAG(
 - 改用纯文本格式 `CONCEPTS: ... | RELATIONS: ...`
 - 用正则表达式解析输出（见 operate.py fallback 逻辑）
 
-**修改文件**:
-- `prompt.py`: 删除 JSON 格式示例，改用纯文本格式
-- `operate.py`: `_call_extract_prompt` 函数中删掉 `json.loads`，直接用正则解析
-
 ### 问题2: LLM 连接错误 (APIConnectionError)
 
 **现象**: `httpx.ConnectError: All connection attempts failed`
@@ -98,30 +110,15 @@ rag = HyperGraphRAG(
 
 **解决方案**: 
 - 设置 `llm_model_name="llama3.1:8b"`
-- 设置 `llm_model_kwargs={"base_url": "http://localhost:11434/v1", "api_key": "ollama"}`
+- 设置 `llm_model_kwargs={"base_url": "http://localhost:11434/v1", "api_key": "***"}`
 
 ### 问题3: model 参数冲突（tenacity + partial bug）
 
 **现象**: `TypeError: openai_complete_if_cache() got multiple values for argument 'model'`
 
-**原因**: HyperGraphRAG 用 `functools.partial` 包装 `openai_complete_if_cache` 绑定 `model` 参数。tenacity retry 的 `copy()` 处理 partial 时会把第一个位置参数同时用 positional 和 keyword 方式传递，导致冲突。调试发现 partial 配置正确，但调用时 model 被传了两次。
+**原因**: HyperGraphRAG 用 `functools.partial` 包装 `openai_complete_if_cache` 绑定 `model` 参数。tenacity retry 的 `copy()` 处理 partial 时会把第一个位置参数同时用 positional 和 keyword 方式传递，导致冲突。
 
-**解决方案**: 在 `HyperGraphRAG.__post_init__` 里用普通 async wrapper 函数代替 partial 包装 `llm_model_func`。参考 `hypergraphrag.py` 里的 `llm_wrapper` 实现：
-
-```python
-async def llm_wrapper(prompt, system_prompt=None, history_messages=[], stream=False, **kwargs):
-    return await openai_complete_if_cache(
-        model=_model_name,
-        prompt=prompt,
-        system_prompt=system_prompt,
-        history_messages=history_messages,
-        base_url=_base_url,
-        api_key=_api_key,
-        hashing_kv=_cache,
-        **kwargs
-    )
-self.llm_model_func = llm_wrapper
-```
+**解决方案**: 在 `HyperGraphRAG.__post_init__` 里用普通 async wrapper 函数代替 partial 包装 `llm_model_func`。
 
 ### 问题4: 实体抽取断点续跑
 
@@ -129,13 +126,7 @@ self.llm_model_func = llm_wrapper
 
 **原因**: graphml 文件只在 insert 完全成功后写入
 
-**解决方案**: 在 `hypergraphrag.py` 的 `ainsert` 开头加 checkpoint 判断：
-```python
-_graph_file = os.path.join(self.working_dir, "graph_chunk_entity_relation.graphml")
-if os.path.exists(_graph_file) and self.chunk_entity_relation_graph.number_of_nodes() > 0:
-    logger.info(f"Skipped — graph already has {self.chunk_entity_relation_graph.number_of_nodes()} nodes")
-    # 跳到 embedding 步骤
-```
+**解决方案**: 在 `hypergraphrag.py` 的 `ainsert` 开头加 checkpoint 判断：graph 已有节点时跳过抽取步骤。
 
 ### 问题5: ZhipuAI Embedding API 429 错误
 
@@ -158,7 +149,7 @@ if os.path.exists(_graph_file) and self.chunk_entity_relation_graph.number_of_no
 llm_model_max_token_size: int = 2048
 ```
 
-### 问题8: llm_kwargs 属性名拼写错误
+### 问题7: llm_kwargs 属性名拼写错误
 
 **现象**: `AttributeError: 'HyperGraphRAG' object has no attribute 'llm_kwargs'`
 
@@ -170,7 +161,7 @@ _base_url = self.llm_model_kwargs.get("base_url")
 _api_key = self.llm_model_kwargs.get("api_key")
 ```
 
-### 问题9: contexts 和 datasets 软链接问题
+### 问题8: contexts 和 datasets 软链接问题
 
 **现象**: 软链接指向 Mac 本地路径 `/Users/ejuer/Desktop/...`，在服务器上无效
 
@@ -179,10 +170,14 @@ _api_key = self.llm_model_kwargs.get("api_key")
 **解决方案**: 
 - 删除软链接
 - 用 scp 直接从 Mac 传数据到服务器
-```bash
-scp -r -P 23 ~/Desktop/auto-aiwork/hermes_doc/HyperGraphRAG-contexts\&datasets/contexts root@106.75.68.167:/root/HYPER-download/evaluation/
-scp -r -P 23 ~/Desktop/auto-aiwork/hermes_doc/HyperGraphRAG-contexts\&datasets/datasets/* root@106.75.68.167:/root/HYPER-download/evaluation/datasets/
-```
+
+### 问题9: JSON parsing error 日志噪音
+
+**现象**: 日志里频繁出现 `JSON parsing error: Expecting value: line 1 column 1`
+
+**原因**: llama3.1:8b 输出 markdown 代码块（` ```python ... ` 或 ` ```text ... `）而不是纯文本，JSON 解析失败
+
+**状态**: 非 bug，fallback 正则解析正常接管，不影响功能。日志吵杂但不影响正确性，暂不处理。
 
 ## 数据文件
 
@@ -206,10 +201,12 @@ curl -s http://localhost:11434/api/tags
 
 所有代码修改在 Mac 本地 `~/Desktop/auto-aiwork/hermes_doc/HyperGraphRAG/` 进行，通过 git push 同步到 GitHub，服务器上 git pull 拉取。
 
+代码修改后我主动 push，不等用户提醒。
+
 ```bash
-# Mac 本地
+# Mac 本地（我来执行）
 git add -A && git commit -m "message" && git push
 
-# 服务器上
+# 服务器上（用户执行）
 cd ~/HYPER-download && git pull
 ```

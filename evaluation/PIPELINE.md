@@ -21,7 +21,7 @@ curl -s http://localhost:11434/api/tags
 
 ### 环境变量
 ```bash
-export ZHIPUAI_API_KEY="your_zhipu_api_key"  # embedding 用
+export ZHIPUAI_API_KEY="your_z..._key"  # embedding 用
 ```
 
 ## 数据文件
@@ -68,6 +68,23 @@ python get_score.py --data_source hypertension
 - contexts: `contexts/{dataset}_contexts.json`
 - questions: `datasets/{dataset}/questions.json`
 
+## 当前进度
+
+| 数据集 | Insert | Query | Generation | Scoring |
+|--------|--------|-------|------------|---------|
+| hypertension | ✅ | 进行中 | ⏳ | ⏳ |
+| agriculture | ⏳ | ⏳ | ⏳ | ⏳ |
+| cs | ⏳ | ⏳ | ⏳ | ⏳ |
+| legal | ⏳ | ⏳ | ⏳ | ⏳ |
+| mix | ⏳ | ⏳ | ⏳ | ⏳ |
+
+## 下一步
+
+1. 等 hypertension query 跑完
+2. `python get_generation.py --data_source hypertension`
+3. `python get_score.py --data_source hypertension`
+4. 其余 4 个 dataset 各跑一遍完整 4 步
+
 ## 常见问题
 
 ### 1. TypeError: openai_complete_if_cache() got multiple values for argument 'model'
@@ -81,16 +98,16 @@ rag = HyperGraphRAG(
     llm_model_name="llama3.1:8b",
     llm_model_kwargs={
         "base_url": "http://localhost:11434/v1",
-        "api_key": "ollama"
+        "api_key": "***"
     }
 )
 ```
 
-### 2. JSON 解析错误
+### 2. JSON parsing error 日志
 
-**原因**: llama3.1:8b 不遵循 JSON 格式指令
+**原因**: llama3.1:8b 输出 markdown 代码块，JSON 解析失败，但 fallback 正则解析正常接管
 
-**解决**: 已改为纯文本格式 + 正则解析
+**状态**: 非 bug，不影响功能，暂不处理
 
 ### 3. Embedding 429 错误
 
@@ -104,7 +121,7 @@ rag = HyperGraphRAG(
 
 ## Git 工作流
 
-所有修改在 Mac 本地进行：
+所有修改在 Mac 本地进行，我来执行 commit + push：
 
 ```bash
 # Mac 本地
