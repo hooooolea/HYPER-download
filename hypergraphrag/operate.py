@@ -307,91 +307,66 @@ async def extract_entities(
         first_result = await use_llm_func(prompt=prompt)
         history += pack_user_ass_to_openai_messages(prompt, first_result)
 
-        # 解析第一个结果，累积到 merged dict
+        # 解析结果：用正则解析纯文本格式 CONCEPTS: | RELATIONS:
         merged: dict = {"concepts": [], "relations": []}
         try:
-            cleaned = first_result.strip()
-            # 处理 markdown code fence（可能前面有 <think> 思考块）
-            if cleaned.startswith("```"):
-                lines = cleaned.split("\n")
-                cleaned = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
-            elif "```" in cleaned:
-                # 思考块在前，fence 在中间：找到第一个 ``` 之后、最后一个 ``` 之前的内容
-                first_fence = cleaned.find("```")
-                last_fence = cleaned.rfind("```")
-                if last_fence > first_fence:
-                    cleaned = cleaned[first_fence + 3 : last_fence]
-            parsed = json.loads(cleaned)
-            # 兼容处理：MiniMax 有时返回纯数组而非 {"concepts": [...], "relations": [...]} 格式
-            if isinstance(parsed, list):
-                merged["concepts"].extend(parsed)
-            else:
-                merged["concepts"].extend(parsed.get("concepts", []))
-                merged["relations"].extend(parsed.get("relations", []))
-        except json.JSONDecodeError as e:
-            logger.warning(f"JSON parse error for chunk {chunk_key} (first result): {e}")
-            # Fallback: 尝试解析纯文本格式 CONCEPTS: ... | RELATIONS: ...
-            # 支持两种格式：
-            # 1. 纯文本：CONCEPTS: concept1 (domain: ...; desc: ...) | ...
-            # 2. Markdown：**CONCEPTS:**\n* concept1 (domain: ...; desc: ...) | ...
-            try:
-                _text = first_result.strip()
-                # 去掉 markdown code fence
-                if _text.startswith("```"):
-                    _lines = _text.split("\n")
-                    _text = "\n".join(_lines[1:-1] if _lines[-1] == "```" else _lines[1:])
-                elif "```" in _text:
-                    _fi = _text.find("```")
-                    _la = _text.rfind("```")
-                    if _la > _fi:
-                        _text = _text[_fi + 3 : _la]
+            _text = first_result.strip()
+            # 处理 markdown code fence 和 <think> 思考块
+            if _text.startswith("```"):
+                _lines = _text.split("\n")
+                _text = "\n".join(_lines[1:-1] if _lines[-1] == "```" else _lines[1:])
+            elif "```" in _text:
+                _fi = _text.find("```")
+                _la = _text.rfind("```")
+                if _la > _fi:
+                    _text = _text[_fi + 3 : _la]
 
-                # 去掉 markdown 格式：**CONCEPTS:**, * bullet, **bold**，以及概念名后的别名如 (function)
-                _text = re.sub(r"\*\*([A-Z]+):\*\*", lambda m: m.group(1) + ":", _text)
-                _text = re.sub(r"^\* ", "", _text, flags=re.MULTILINE)
-                _text = re.sub(r"\*\*([^*]+)\*\*", r"\1", _text)
-                _text = re.sub(r"\n\* ", "\n", _text)
+            # 去掉 markdown 格式：**CONCEPTS:**, * bullet, **bold**，以及概念名后的别名如 (function)
+            _text = re.sub(r"\*\*([A-Z]+):\*\*", lambda m: m.group(1) + ":", _text)
+            _text = re.sub(r"^\* ", "", _text, flags=re.MULTILINE)
+            _text = re.sub(r"\*\*([^*]+)\*\*", r"\1", _text)
+            _text = re.sub(r"\n\* ", "\n", _text)
 
-                # 解析 CONCEPTS 行
-                _concept_match = re.search(r"CONCEPTS:\s*(.+?)(?:\nRELATIONS:|$)", _text, re.DOTALL)
-                if _concept_match:
-                    for _item in _concept_match.group(1).split("|"):
-                        _item = _item.strip()
-                        if not _item:
-                            continue
-                        # 先去掉概念名后的 (alias) 别名，如 "函数 (function)" -> "函数"
-                        _item = re.sub(r"^(.+?)\s*\([^)]+\)\s*", r"\1", _item)
-                        _name_match = re.match(r"^(.+?)\s*\(domain:\s*([^;]+);\s*desc:\s*(.+?)\)$", _item)
-                        if _name_match:
-                            merged["concepts"].append({
-                                "name": _name_match.group(1).strip(),
-                                "domain": [_name_match.group(2).strip()],
-                                "description": _name_match.group(3).strip()
-                            })
+            # 解析 CONCEPTS 行
+            _concept_match = re.search(r"CONCEPTS:\s*(.+?)(?:\nRELATIONS:|$)", _text, re.DOTALL)
+            if _concept_match:
+                for _item in _concept_match.group(1).split("|"):
+                    _item = _item.strip()
+                    if not _item:
+                        continue
+                    # 先去掉概念名后的 (alias) 别名，如 "函数 (function)" -> "函数"
+                    _item = re.sub(r"^(.+?)\s*\([^)]+\)\s*", r"\1", _item)
+                    _name_match = re.match(r"^(.+?)\s*\(domain:\s*([^;]+);\s*desc:\s*(.+?)\)$", _item)
+                    if _name_match:
+                        merged["concepts"].append({
+                            "name": _name_match.group(1).strip(),
+                            "domain": [_name_match.group(2).strip()],
+                            "description": _name_match.group(3).strip()
+                        })
 
-                # 解析 RELATIONS 行
-                _rel_match = re.search(r"RELATIONS:\s*(.+?)(?:\n|$)", _text, re.DOTALL)
-                if _rel_match:
-                    for _item in _rel_match.group(1).split("|"):
-                        _item = _item.strip()
-                        if not _item:
-                            continue
-                        # 处理 markdown 斜体或 bold 的残留格式
-                        _item = re.sub(r"\*\*([^*]+)\*\*", r"\1", _item)
-                        # 去掉 src/tgt 中的 (alias)，如 "函数 -> 变量 (variables)" -> "函数 -> 变量"
-                        _item_clean = re.sub(r"^(.+?)\s*\([^)]+\)\s*", r"\1", _item)
-                        _item_clean = re.sub(r"\s*\([^)]+\)\s*->", "->", _item_clean)
-                        _item_clean = re.sub(r"->\s*\([^)]+\)\s*", "->", _item_clean)
-                        _rel_match2 = re.match(r"^(.+?)\s*->\s*(.+?)\s*\(type:\s*([^;]+);\s*desc:\s*(.+?)\)$", _item_clean)
-                        if _rel_match2:
-                            merged["relations"].append({
-                                "src": _rel_match2.group(1).strip(),
-                                "tgt": _rel_match2.group(2).strip(),
-                                "type": _rel_match2.group(3).strip(),
-                                "description": _rel_match2.group(4).strip()
-                            })
-            except Exception as _fallback_err:
-                logger.warning(f"Fallback parse also failed for chunk {chunk_key}: {_fallback_err}")
+            # 解析 RELATIONS 行
+            _rel_match = re.search(r"RELATIONS:\s*(.+?)(?:\n|$)", _text, re.DOTALL)
+            if _rel_match:
+                for _item in _rel_match.group(1).split("|"):
+                    _item = _item.strip()
+                    if not _item:
+                        continue
+                    # 处理 markdown 斜体或 bold 的残留格式
+                    _item = re.sub(r"\*\*([^*]+)\*\*", r"\1", _item)
+                    # 去掉 src/tgt 中的 (alias)，如 "函数 -> 变量 (variables)" -> "函数 -> 变量"
+                    _item_clean = re.sub(r"^(.+?)\s*\([^)]+\)\s*", r"\1", _item)
+                    _item_clean = re.sub(r"\s*\([^)]+\)\s*->", "->", _item_clean)
+                    _item_clean = re.sub(r"->\s*\([^)]+\)\s*", "->", _item_clean)
+                    _rel_match2 = re.match(r"^(.+?)\s*->\s*(.+?)\s*\(type:\s*([^;]+);\s*desc:\s*(.+?)\)$", _item_clean)
+                    if _rel_match2:
+                        merged["relations"].append({
+                            "src": _rel_match2.group(1).strip(),
+                            "tgt": _rel_match2.group(2).strip(),
+                            "type": _rel_match2.group(3).strip(),
+                            "description": _rel_match2.group(4).strip()
+                        })
+        except Exception as _parse_err:
+            logger.warning(f"Parse error for chunk {chunk_key}: {_parse_err}")
 
         # glean 循环：继续抽取更多 entity，逐个解析并合并
         for glean_index in range(entity_extract_max_gleaning):
@@ -414,15 +389,49 @@ async def extract_entities(
                     last_fence = glean_cleaned.rfind("```")
                     if last_fence > first_fence:
                         glean_cleaned = glean_cleaned[first_fence + 3 : last_fence]
-                glean_parsed = json.loads(glean_cleaned)
-                # 兼容处理：glean 结果也可能是纯数组
-                if isinstance(glean_parsed, list):
-                    merged["concepts"].extend(glean_parsed)
-                else:
-                    merged["concepts"].extend(glean_parsed.get("concepts", []))
-                    merged["relations"].extend(glean_parsed.get("relations", []))
-            except json.JSONDecodeError:
-                pass  # glean 失败（如返回 "no"）不影响主结果
+
+                # 去掉 markdown 格式
+                glean_cleaned = re.sub(r"\*\*([A-Z]+):\*\*", lambda m: m.group(1) + ":", glean_cleaned)
+                glean_cleaned = re.sub(r"^\* ", "", glean_cleaned, flags=re.MULTILINE)
+                glean_cleaned = re.sub(r"\*\*([^*]+)\*\*", r"\1", glean_cleaned)
+                glean_cleaned = re.sub(r"\n\* ", "\n", glean_cleaned)
+
+                # 解析 CONCEPTS
+                glean_c_match = re.search(r"CONCEPTS:\s*(.+?)(?:\nRELATIONS:|$)", glean_cleaned, re.DOTALL)
+                if glean_c_match:
+                    for _g_item in glean_c_match.group(1).split("|"):
+                        _g_item = _g_item.strip()
+                        if not _g_item:
+                            continue
+                        _g_item = re.sub(r"^(.+?)\s*\([^)]+\)\s*", r"\1", _g_item)
+                        _gm = re.match(r"^(.+?)\s*\(domain:\s*([^;]+);\s*desc:\s*(.+?)\)$", _g_item)
+                        if _gm:
+                            merged["concepts"].append({
+                                "name": _gm.group(1).strip(),
+                                "domain": [_gm.group(2).strip()],
+                                "description": _gm.group(3).strip()
+                            })
+
+                # 解析 RELATIONS
+                glean_r_match = re.search(r"RELATIONS:\s*(.+?)(?:\n|$)", glean_cleaned, re.DOTALL)
+                if glean_r_match:
+                    for _r_item in glean_r_match.group(1).split("|"):
+                        _r_item = _r_item.strip()
+                        if not _r_item:
+                            continue
+                        _r_item = re.sub(r"^(.+?)\s*\([^)]+\)\s*", r"\1", _r_item)
+                        _r_item = re.sub(r"\s*\([^)]+\)\s*->", "->", _r_item)
+                        _r_item = re.sub(r"->\s*\([^)]+\)\s*", "->", _r_item)
+                        _rm = re.match(r"^(.+?)\s*->\s*(.+?)\s*\(type:\s*([^;]+);\s*desc:\s*(.+?)\)$", _r_item)
+                        if _rm:
+                            merged["relations"].append({
+                                "src": _rm.group(1).strip(),
+                                "tgt": _rm.group(2).strip(),
+                                "type": _rm.group(3).strip(),
+                                "description": _rm.group(4).strip()
+                            })
+            except Exception:
+                pass  # glean 失败不影响主结果
 
             if glean_index == entity_extract_max_gleaning - 1:
                 break

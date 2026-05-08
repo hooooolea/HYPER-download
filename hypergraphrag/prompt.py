@@ -37,28 +37,9 @@ Use {language} as output language.
    - tgt: target concept name
    - description: relationship description (1-2 sentences)
 
-3. Return output in JSON format with two keys: "concepts" and "relations".
+3. Return output in the plain text format below.
 
 -Output Format-
-{{
-  "concepts": [
-    {{
-      "name": "<concept_name>",
-      "domain": ["<domain1>", "<domain2>"],
-      "description": "<description>"
-    }}
-  ],
-  "relations": [
-    {{
-      "type": "<Depends|Related|Contains|Prerequisite>",
-      "src": "<source_concept_name>",
-      "tgt": "<target_concept_name>",
-      "description": "<description>"
-    }}
-  ]
-}}
-
-IMPORTANT: If you cannot output valid JSON, use this plain text format instead:
 CONCEPTS: concept1 (domain: domain1; desc: description) | concept2 (domain: domain2; desc: description) | ...
 RELATIONS: src1->tgt1 (type: Depends; desc: description) | src2->tgt2 (type: Related; desc: description) | ...
 
