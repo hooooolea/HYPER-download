@@ -100,15 +100,28 @@ rag = HyperGraphRAG(
 - 设置 `llm_model_name="llama3.1:8b"`
 - 设置 `llm_model_kwargs={"base_url": "http://localhost:11434/v1", "api_key": "ollama"}`
 
-### 问题3: model 参数冲突
+### 问题3: model 参数冲突（tenacity + partial bug）
 
 **现象**: `TypeError: openai_complete_if_cache() got multiple values for argument 'model'`
 
-**原因**: `model` 参数既在 `llm_model_kwargs` 里传了，又通过 `llm_model_name` 单独传了，导致冲突
+**原因**: HyperGraphRAG 用 `functools.partial` 包装 `openai_complete_if_cache` 绑定 `model` 参数。tenacity retry 的 `copy()` 处理 partial 时会把第一个位置参数同时用 positional 和 keyword 方式传递，导致冲突。调试发现 partial 配置正确，但调用时 model 被传了两次。
 
-**解决方案**: 
-- `llm_model_kwargs` 里不传 `model`
-- `model` 只通过 `llm_model_name` 传
+**解决方案**: 在 `HyperGraphRAG.__post_init__` 里用普通 async wrapper 函数代替 partial 包装 `llm_model_func`。参考 `hypergraphrag.py` 里的 `llm_wrapper` 实现：
+
+```python
+async def llm_wrapper(prompt, system_prompt=None, history_messages=[], stream=False, **kwargs):
+    return await openai_complete_if_cache(
+        model=_model_name,
+        prompt=prompt,
+        system_prompt=system_prompt,
+        history_messages=history_messages,
+        base_url=_base_url,
+        api_key=_api_key,
+        hashing_kv=_cache,
+        **kwargs
+    )
+self.llm_model_func = llm_wrapper
+```
 
 ### 问题4: 实体抽取断点续跑
 

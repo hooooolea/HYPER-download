@@ -238,18 +238,29 @@ class HyperGraphRAG:
             print(f"[DEBUG HyperGraphRAG.__post_init__] llm_model_func type={type(self.llm_model_func)}, name={getattr(self.llm_model_func, '__name__', 'N/A')}", file=sys.stderr)
             if hasattr(self.llm_model_func, 'keywords'):
                 print(f"[DEBUG] partial.keywords={self.llm_model_func.keywords}", file=sys.stderr)
-            # limit_async_func_call removed due to tenacity copy() signature introspection bug
-            self.llm_model_func = partial(
-                self.llm_model_func,
-                model=self.llm_model_name,
-                hashing_kv=self.llm_response_cache,
-                **self.llm_model_kwargs,
-            )
+            # Use a plain wrapper function instead of functools.partial
+            # to avoid tenacity copy() signature introspection bug with partial
+            _model_name = self.llm_model_name
+            _base_url = self.llm_kwargs.get("base_url")
+            _api_key = self.llm_kwargs.get("api_key")
+            _cache = self.llm_response_cache
+
+            async def llm_wrapper(prompt, system_prompt=None, history_messages=[], stream=False, **kwargs):
+                return await openai_complete_if_cache(
+                    model=_model_name,
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    history_messages=history_messages,
+                    base_url=_base_url,
+                    api_key=_api_key,
+                    hashing_kv=_cache,
+                    **kwargs
+                )
+            self.llm_model_func = llm_wrapper
 
     def _get_storage_class(self) -> Type[BaseGraphStorage]:
         return {
             "JsonKVStorage": JsonKVStorage,
-            "OracleKVStorage": OracleKVStorage,
             "MongoKVStorage": MongoKVStorage,
             "TiDBKVStorage": TiDBKVStorage,
             "NanoVectorDBStorage": NanoVectorDBStorage,
