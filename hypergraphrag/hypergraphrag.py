@@ -234,6 +234,10 @@ class HyperGraphRAG:
         )
 
         if self.llm_model_func is not None:
+            import sys
+            print(f"[DEBUG HyperGraphRAG.__post_init__] llm_model_func type={type(self.llm_model_func)}, name={getattr(self.llm_model_func, '__name__', 'N/A')}", file=sys.stderr)
+            if hasattr(self.llm_model_func, 'keywords'):
+                print(f"[DEBUG] partial.keywords={self.llm_model_func.keywords}", file=sys.stderr)
             # limit_async_func_call removed due to tenacity copy() signature introspection bug
             self.llm_model_func = partial(
                 self.llm_model_func,

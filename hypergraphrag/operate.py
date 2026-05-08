@@ -738,6 +738,13 @@ async def kg_query(
         examples="",  # 查询时不用示例
     )
     kw_prompt = extract_kw_prompt.format(**kw_context_base, input_text=query)
+    import sys
+    print(f"[DEBUG kg_query use_model_func] type={type(use_model_func)}", file=sys.stderr)
+    if hasattr(use_model_func, 'func'):
+        print(f"[DEBUG] partial.func={use_model_func.func}", file=sys.stderr)
+        print(f"[DEBUG] partial.keywords={use_model_func.keywords}", file=sys.stderr)
+        print(f"[DEBUG] partial.args={use_model_func.args}", file=sys.stderr)
+    print(f"[DEBUG kg_query] calling with prompt_len={len(kw_prompt)}", file=sys.stderr)
     final_result = await use_model_func(kw_prompt)
 
     logger.info("kw_prompt result:")
