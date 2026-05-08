@@ -14,6 +14,18 @@ from eval import cal_em, cal_f1
 from eval_r import cal_rsim
 from eval_g import cal_gen
 from concurrent.futures import ThreadPoolExecutor
+import numpy as np
+
+
+def to_python_float(obj):
+    """递归将 numpy float32/float64 转为 Python float"""
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, dict):
+        return {k: to_python_float(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [to_python_float(i) for i in obj]
+    return obj
 
 
 def evaluate_one(d):
@@ -83,15 +95,15 @@ def evaluate_method(args):
 
         result_path = os.path.join(save_base, "test_result.json")
         with open(result_path, 'w') as f:
-            json.dump(data, f, indent=4)
+            json.dump(to_python_float(data), f, indent=4)
 
         score_path = os.path.join(save_base, "test_score.json")
         with open(score_path, 'w') as f:
             json.dump({
-                "overall_em": overall_em,
-                "overall_f1": overall_f1,
-                "overall_rsim": overall_rsim,
-                "overall_gen": overall_gen,
+                "overall_em": float(overall_em),
+                "overall_f1": float(overall_f1),
+                "overall_rsim": float(overall_rsim),
+                "overall_gen": float(overall_gen),
             }, f, indent=4)
 
         # 成功保存标志
