@@ -3,13 +3,28 @@ import os
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+import nest_asyncio
 
-# MiniMax API 配置（从环境变量读取）
-# 确保 OLLAMA_API_KEY 已设置（使用 Ollama 本地推理）
+# 允许嵌套 asyncio 调用
+nest_asyncio.apply()
 
+# Ollama API 配置（本地 GPU 推理）
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from hypergraphrag.llm import openai_complete_if_cache
+
+# 共享 event loop，避免 ThreadPoolExecutor 中每次 asyncio.run() 创建新 loop
+_loop = None
+_loop_lock = None
+
+def _get_loop():
+    global _loop, _loop_lock
+    if _loop is None:
+        import threading
+        _loop_lock = threading.Lock()
+        _loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_loop)
+    return _loop
 
 
 def cal_gen(question, answers, generation, f1_score):
@@ -134,7 +149,8 @@ Explain why you gave this score.
             prompt = build_prompt(metric)
 
             # 使用 Ollama 同步调用（ThreadPoolExecutor 中运行）
-            response = asyncio.run(
+            loop = _get_loop()
+            response = loop.run_until_complete(
                 openai_complete_if_cache(
                     model="llama3.1:8b",
                     prompt=prompt,
