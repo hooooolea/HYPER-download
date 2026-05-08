@@ -59,6 +59,9 @@ async def openai_complete_if_cache(
     api_key=None,
     **kwargs,
 ) -> str:
+    # DEBUG
+    import sys
+    print(f"[DEBUG openai_complete_if_cache] model={model}, prompt_len={len(prompt)}, kwargs_keys={list(kwargs.keys())}", file=sys.stderr)
     if api_key:
         os.environ["OPENAI_API_KEY"] = api_key
 
