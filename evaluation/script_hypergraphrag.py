@@ -12,7 +12,7 @@ parser.add_argument('--data_source', default='hypertension')
 args = parser.parse_args()
 data_source = args.data_source
 
-rag = HyperGraphRAG(working_dir=f"expr/{data_source}")
+rag = HyperGraphRAG(working_dir=f"expr/{data_source}", llm_model_name="llama3.1:8b", llm_model_kwargs={"base_url": "http://localhost:11434/v1", "api_key": "ollama"})
 
 async def query_with_semaphore(sem, q):
     async with sem:
