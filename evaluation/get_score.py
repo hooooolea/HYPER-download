@@ -3,21 +3,14 @@ nest_asyncio.apply()
 
 import json
 import os
-from eval import cal_em, cal_f1
-from eval_r import cal_rsim
-from eval_g import cal_gen
-from concurrent.futures import ProcessPoolExecutor
-from tqdm import tqdm
-import argparse
-import os
-import json
 import traceback
-from tqdm import tqdm
+import argparse
 from eval import cal_em, cal_f1
 from eval_r import cal_rsim
 from eval_g import cal_gen
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
+from tqdm import tqdm
 
 
 def to_python_float(obj):
@@ -78,7 +71,7 @@ def evaluate_method(args):
             data = json.load(f)
 
         # 并行处理样本
-        max_workers = 64
+        max_workers = 16
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             data = list(tqdm(executor.map(evaluate_one, data), total=len(data), desc=method))
 

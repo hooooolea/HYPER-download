@@ -56,7 +56,7 @@ def process_method(method, data_sources):
             data = json.load(f)
 
         results = []
-        with ThreadPoolExecutor(max_workers=32) as executor:
+        with ThreadPoolExecutor(max_workers=8) as executor:
             futures = [executor.submit(generate_response, d) for d in data]
             for future in tqdm(as_completed(futures), total=len(futures), desc=f"{method}"):
                 results.append(future.result())
