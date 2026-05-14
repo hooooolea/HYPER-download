@@ -8,7 +8,7 @@ from typing import Type, cast
 
 from .llm import (
     gpt_4o_mini_complete,
-    openai_embedding,
+    zhipu_embedding,
 )
 from .operate import (
     chunking_by_token_size,
