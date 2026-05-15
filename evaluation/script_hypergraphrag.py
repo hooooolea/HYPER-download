@@ -5,8 +5,6 @@ import asyncio
 from hypergraphrag import HyperGraphRAG, QueryParam
 from tqdm.asyncio import tqdm_asyncio
 
-os.environ["OPENAI_API_KEY"] = open("openai_api_key.txt").read().strip()
-
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_source', default='hypertension')
 args = parser.parse_args()

@@ -1,19 +1,27 @@
+import nest_asyncio
+nest_asyncio.apply()
+
 import json
 import os
-from eval import cal_em, cal_f1
-from eval_r import cal_rsim
-from eval_g import cal_gen
-from concurrent.futures import ProcessPoolExecutor
-from tqdm import tqdm
-import argparse
-import os
-import json
 import traceback
-from tqdm import tqdm
+import argparse
 from eval import cal_em, cal_f1
 from eval_r import cal_rsim
 from eval_g import cal_gen
 from concurrent.futures import ThreadPoolExecutor
+import numpy as np
+from tqdm import tqdm
+
+
+def to_python_float(obj):
+    """递归将 numpy float32/float64 转为 Python float"""
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, dict):
+        return {k: to_python_float(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [to_python_float(i) for i in obj]
+    return obj
 
 
 def evaluate_one(d):
@@ -32,7 +40,7 @@ def evaluate_one(d):
             if c not in context:
                 context.append(c)
 
-        rsim_score = cal_rsim(['\n'.join(context)], [d['knowledge']]) if d['knowledge'] != "" else 0.0 
+        rsim_score = cal_rsim(['\n'.join(context)], [d['knowledge']]) if d['knowledge'] != "" else 0.0
         gen_score = cal_gen(d['question'], d['golden_answers'], generation, f1_score)
 
         d['em'] = em_score
@@ -50,12 +58,12 @@ def evaluate_one(d):
 def evaluate_method(args):
     method = args.method
     data_source = args.data_source
-    success_flag = False  # 控制是否成功保存
+    success_flag = False
 
     try:
         print(f"[DEBUG] Evaluating {method} on {data_source}")
         data_dir = f"results/{method}/{data_source}/test_generation.json"
-        
+
         if not os.path.exists(data_dir):
             raise FileNotFoundError(f"File not found: {data_dir}")
 
@@ -63,7 +71,7 @@ def evaluate_method(args):
             data = json.load(f)
 
         # 并行处理样本
-        max_workers = 64
+        max_workers = 16
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             data = list(tqdm(executor.map(evaluate_one, data), total=len(data), desc=method))
 
@@ -83,7 +91,7 @@ def evaluate_method(args):
 
         result_path = os.path.join(save_base, "test_result.json")
         with open(result_path, 'w') as f:
-            json.dump(data, f, indent=4)
+            json.dump(to_python_float(data), f, indent=4)
 
         score_path = os.path.join(save_base, "test_score.json")
         with open(score_path, 'w') as f:
@@ -94,7 +102,6 @@ def evaluate_method(args):
                 "overall_gen": overall_gen,
             }, f, indent=4)
 
-        # 成功保存标志
         success_flag = True
         print(f"[SAVED] {result_path}")
         print(f"[SAVED] {score_path}")
@@ -107,7 +114,7 @@ def evaluate_method(args):
 
     if not success_flag:
         raise RuntimeError(f"{method} did not complete saving.")
-    
+
     return True
 
 if __name__ == "__main__":

@@ -1,13 +1,12 @@
 import numpy as np
 import os
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from openai import OpenAI
 from functools import partial
 
-# 设置 OpenAI API 密钥
-os.environ["OPENAI_API_KEY"] = open("openai_api_key.txt").read().strip()
-# client = OpenAI()
-client = OpenAI(api_key=open("openai_api_key.txt").read().strip(), base_url="https://api.apiyi.com/v1")
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from hypergraphrag.llm import openai_complete_if_cache
 
 def cal_gen(question, answers, generation, f1_score):
     exp = {}
@@ -131,18 +130,25 @@ Explain why you gave this score.
         try:
             prompt = build_prompt(metric)
 
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}]
+            response = asyncio.run(
+                openai_complete_if_cache(
+                    model="llama3.1:8b",
+                    prompt=prompt,
+                    system_prompt=None,
+                    base_url="http://localhost:11434/v1",
+                    api_key="ollama",
+                    temperature=0,
+                )
             )
-            content = response.choices[0].message.content
+
+            content = response.strip()
             
             score_str = content.split("<score>")[1].split("</score>")[0].strip()
             explanation = content.split("<explanation>")[1].split("</explanation>")[0].strip()
             score = int(score_str)
         except Exception as e:
             score = 5
-            explanation = f"Failed to parse GPT output. Defaulted to score=5. Error: {str(e)}"
+            explanation = f"Failed to parse LLM output. Defaulted to score=5. Error: {str(e)}"
 
         score = score / 10
         score = (score + f1_score) / 2

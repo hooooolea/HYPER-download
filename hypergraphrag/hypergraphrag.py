@@ -7,8 +7,8 @@ from functools import partial
 from typing import Type, cast
 
 from .llm import (
-    gpt_4o_mini_complete,
-    openai_embedding,
+    ollama_model_complete,
+    zhipu_embedding,
 )
 from .operate import (
     chunking_by_token_size,
@@ -148,13 +148,13 @@ class HyperGraphRAG:
     )
 
     # embedding_func: EmbeddingFunc = field(default_factory=lambda:hf_embedding)
-    embedding_func: EmbeddingFunc = field(default_factory=lambda: openai_embedding)
+    embedding_func: EmbeddingFunc = field(default_factory=lambda: zhipu_embedding)
     embedding_batch_num: int = 32
     embedding_func_max_async: int = 16
 
     # LLM
-    llm_model_func: callable = gpt_4o_mini_complete  # hf_model_complete#
-    llm_model_name: str = "meta-llama/Llama-3.2-1B-Instruct"  #'meta-llama/Llama-3.2-1B'#'google/gemma-2-2b-it'
+    llm_model_func: callable = ollama_model_complete  # hf_model_complete#
+    llm_model_name: str = "llama3.1:8b"  #'meta-llama/Llama-3.2-1B'#'google/gemma-2-2b-it'
     llm_model_max_token_size: int = 32768
     llm_model_max_async: int = 16
     llm_model_kwargs: dict = field(default_factory=dict)

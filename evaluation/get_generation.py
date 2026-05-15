@@ -1,9 +1,14 @@
 import json
 import os
-from tqdm import tqdm
-from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
 import argparse
+import asyncio
+
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from hypergraphrag.llm import openai_complete_if_cache
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_sources', default='hypertension')
 parser.add_argument('--methods', default='StandardRAG')
@@ -11,11 +16,8 @@ args = parser.parse_args()
 methods = args.methods.split(',')
 data_sources = args.data_sources.split(',')
 
-os.environ["OPENAI_API_KEY"] = open("openai_api_key.txt").read().strip()
-client = OpenAI(base_url="https://vip.apiyi.com/v1")
 
 def generate_response(d):
-    # d['knowledge'] = ' '.join(d['knowledge'].split(' ')[:1200])
     prompt = f"""---Role---
 
 You are a helpful assistant responding to questions based on given knowledge.
@@ -44,11 +46,17 @@ Output format for answer:
 """
     d['prompt'] = prompt
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
+        response = asyncio.run(
+            openai_complete_if_cache(
+                model="llama3.1:8b",
+                prompt=prompt,
+                system_prompt=None,
+                base_url="http://localhost:11434/v1",
+                api_key="ollama",
+                temperature=0.7,
+            )
         )
-        d['generation'] = response.choices[0].message.content
+        d['generation'] = response.strip()
     except Exception as e:
         d['generation'] = f"[ERROR] {str(e)}"
     return d
@@ -61,7 +69,7 @@ def process_method(method):
             data = json.load(f)
 
         results = []
-        with ThreadPoolExecutor(max_workers=32) as executor:
+        with ThreadPoolExecutor(max_workers=8) as executor:
             futures = [executor.submit(generate_response, d) for d in data]
             for future in tqdm(as_completed(futures), total=len(futures), desc=f"{method}"):
                 results.append(future.result())

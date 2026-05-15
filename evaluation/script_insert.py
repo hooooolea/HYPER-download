@@ -4,7 +4,6 @@ import time
 from hypergraphrag import HyperGraphRAG
 import argparse
 
-os.environ["OPENAI_API_KEY"] = open("openai_api_key.txt").read().strip()
 
 def insert_text(rag, file_path):
     with open(file_path, mode="r") as f:
